@@ -106,6 +106,13 @@ class ProviderClient(ABC):
     deliberately without a `max_turns` loop — the runtime owns the agent loop.
     """
 
+    # Whether this wire takes a per-call `reasoning_effort`. Only the Responses API does:
+    # Anthropic configures thinking on the provider itself and Chat Completions backends
+    # reject the parameter (Azure 400s on it at any value). The router reads this to drop
+    # the setting for wires that can't take it, so a mid-session model switch can't send
+    # it somewhere it doesn't belong.
+    accepts_reasoning_effort: bool = False
+
     @abstractmethod
     def complete(
         self,

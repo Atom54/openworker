@@ -351,13 +351,34 @@ def test_complete_filters_and_aliases_settings():
         temperature=0.2,
         max_tokens=512,  # chat alias → max_output_tokens
         frequency_penalty=0.5,  # not a Responses param → dropped
-        reasoning_effort="high",  # no effort knob in v1 → dropped
+        reasoning_effort="high",  # folded into the `reasoning` object, not top-level
     )
     assert fake.kwargs["temperature"] == 0.2
     assert fake.kwargs["max_output_tokens"] == 512
     assert "max_tokens" not in fake.kwargs
     assert "frequency_penalty" not in fake.kwargs
     assert "reasoning_effort" not in fake.kwargs
+    assert fake.kwargs["reasoning"] == {"summary": "auto", "effort": "high"}
+
+
+def test_reasoning_effort_defaults_to_the_server_and_ignores_junk():
+    """No level → the server default rides (what every interactive session does). An
+    unknown level would 400, so it is dropped rather than forwarded."""
+    fake = _FakeClient(response=_response([_message_item("x")]))
+    provider = OpenAIResponsesProvider(client=fake)
+
+    provider.complete(model="m", messages=[{"role": "user", "content": "x"}])
+    assert fake.kwargs["reasoning"] == {"summary": "auto"}
+
+    provider.complete(
+        model="m", messages=[{"role": "user", "content": "x"}], reasoning_effort="turbo"
+    )
+    assert fake.kwargs["reasoning"] == {"summary": "auto"}
+
+    provider.complete(
+        model="m", messages=[{"role": "user", "content": "x"}], reasoning_effort="LOW"
+    )
+    assert fake.kwargs["reasoning"] == {"summary": "auto", "effort": "low"}
 
 
 def test_complete_passes_flat_tools():
@@ -582,3 +603,25 @@ def test_registry_routes_blank_endpoint_to_responses():
     assert isinstance(
         build_provider_client("deepseek", {"api_key": "sk-x"}, None), OpenAIProvider
     )
+
+
+def test_param_fix_drops_only_the_effort_when_the_model_rejects_the_level():
+    """Levels are per-model ("Supported values are: 'none', 'low', … 'xhigh'" — live 400 on
+    gpt-5.6-terra for 'minimal'). Losing the turn over it would be worse than losing the
+    level, and `summary` must survive so thinking still streams."""
+    fixed = _param_fix_retry(
+        {
+            "model": "m",
+            "input": [],
+            "reasoning": {"summary": "auto", "effort": "minimal"},
+            "store": False,
+        },
+        Exception(
+            "Error code: 400 - {'error': {'message': \"Unsupported value: 'minimal' is "
+            "not supported with the 'gpt-5.6-terra-2026-07-09' model. Supported values "
+            "are: 'none', 'low', 'medium', 'high', and 'xhigh'.\", 'param': "
+            "'reasoning.effort', 'code': 'unsupported_value'}}"
+        ),
+    )
+    assert fixed["reasoning"] == {"summary": "auto"}  # effort gone, summary kept
+    assert fixed["store"] is False  # nothing else touched

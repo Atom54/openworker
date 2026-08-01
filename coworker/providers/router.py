@@ -68,6 +68,21 @@ class ProviderRouter(ProviderClient):
             return client
 
     @staticmethod
+    def _supported(client: ProviderClient, settings: dict[str, Any]) -> dict[str, Any]:
+        """Drop per-call settings the target wire can't take.
+
+        `reasoning_effort` only exists on the Responses API. It rides the session (an
+        automation's thinking level, carried on the session record), and the model can be
+        switched mid-session — so the check belongs HERE, at the one place that knows which
+        client a call is about to hit, not where the setting was chosen.
+        """
+        if "reasoning_effort" in settings and not getattr(
+            client, "accepts_reasoning_effort", False
+        ):
+            return {k: v for k, v in settings.items() if k != "reasoning_effort"}
+        return settings
+
+    @staticmethod
     def _bare(model: str) -> str:
         """Strip a KNOWN provider prefix; the underlying SDK wants the bare model name. A model
         whose first segment isn't a provider (e.g. `qwen2.5-coder:32b` — a version tag, not a
@@ -78,6 +93,12 @@ class ProviderRouter(ProviderClient):
             if get_descriptor(prefix) is not None:
                 return rest
         return model
+
+    def client_for(self, model: str) -> ProviderClient:
+        """The concrete client a model routes to. Callers that must know WHICH wire a model
+        speaks (per-call settings are provider-specific) ask here instead of re-deriving the
+        registry's build rules and drifting from them."""
+        return self._client_for(model)
 
     def invalidate(self, name: Optional[str] = None) -> None:
         """Drop cached client(s) so the next call rebuilds with fresh config."""
@@ -97,8 +118,12 @@ class ProviderRouter(ProviderClient):
         **settings: Any,
     ):
         self._note_use(model)
-        return self._client_for(model).complete(
-            model=self._bare(model), messages=messages, tools=tools, **settings
+        client = self._client_for(model)
+        return client.complete(
+            model=self._bare(model),
+            messages=messages,
+            tools=tools,
+            **self._supported(client, settings),
         )
 
     def stream(
@@ -110,8 +135,12 @@ class ProviderRouter(ProviderClient):
         **settings: Any,
     ):
         self._note_use(model)
-        return self._client_for(model).stream(
-            model=self._bare(model), messages=messages, tools=tools, **settings
+        client = self._client_for(model)
+        return client.stream(
+            model=self._bare(model),
+            messages=messages,
+            tools=tools,
+            **self._supported(client, settings),
         )
 
     def capabilities(self, model: str):

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .anthropic_provider import AnthropicProvider
+from .azure_provider import AzureFoundryProvider
 from .base import ProviderClient
 from .bedrock_provider import BedrockProvider
 from .gemini_provider import GeminiProvider
@@ -203,6 +204,8 @@ def _build_vertex(profile: dict[str, Any], secrets: Any) -> ProviderClient:
 
 
 def _build_azure(profile: dict[str, Any], secrets: Any) -> ProviderClient:
+    # AzureFoundryProvider picks the wire per resource: /responses where the deployment
+    # serves it (reasoning + tools in one call), Chat Completions otherwise.
     # Endpoint is per-resource, so it only ever comes from the stored profile — there is no
     # default to fall back to, and a blank one would send an Azure key to api.openai.com.
     # The key follows the compat-vendor rule: this provider's own profile or its own env var,
@@ -220,7 +223,9 @@ def _build_azure(profile: dict[str, Any], secrets: Any) -> ProviderClient:
         raise RuntimeError(
             "No Azure AI Foundry API key configured — add it in Settings ▸ Models."
         )
-    return OpenAIProvider(api_key=api_key, base_url=_normalize_azure_url(endpoint))
+    return AzureFoundryProvider(
+        api_key=api_key, base_url=_normalize_azure_url(endpoint)
+    )
 
 
 def _build_ollama(profile: dict[str, Any], secrets: Any) -> ProviderClient:

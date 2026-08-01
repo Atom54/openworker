@@ -498,18 +498,21 @@ def test_azure_endpoint_normalizes_to_the_openai_v1_base():
 
 
 def test_azure_builder_uses_the_normalized_endpoint_and_its_own_key(monkeypatch):
+    """Both wires of the Azure client (see azure_provider.py) get the same normalized
+    endpoint and the provider's own key."""
     from coworker.providers.registry import build_provider_client
 
     monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
     p = build_provider_client(
         "azure", {"endpoint": "https://res.services.ai.azure.com", "api_key": "az-key"}, None
     )
-    assert p._base_url == "https://res.services.ai.azure.com/openai/v1"
-    assert p._api_key == "az-key"
+    assert p._chat._base_url == "https://res.services.ai.azure.com/openai/v1"
+    assert p._responses._base_url == "https://res.services.ai.azure.com/openai/v1"
+    assert p._chat._api_key == "az-key" and p._responses._api_key == "az-key"
 
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "env-key")
     p2 = build_provider_client("azure", {"endpoint": "https://res.services.ai.azure.com"}, None)
-    assert p2._api_key == "env-key"
+    assert p2._responses._api_key == "env-key"
 
 
 def test_azure_fails_fast_without_endpoint_or_key(monkeypatch):
@@ -600,3 +603,61 @@ def test_complete_picks_up_reasoning_content():
     provider = OpenAIProvider(client=_FakeClient(SimpleNamespace(choices=[choice])))
     turn = provider.complete(model="deepseek-v4-pro", messages=[{"role": "user", "content": "x"}])
     assert turn.text == "Answer" and turn.reasoning == "deep thought"
+
+
+# -- per-call settings the target wire can't take ---------------------------------
+
+
+def test_router_drops_reasoning_effort_for_wires_that_reject_it():
+    """`reasoning_effort` rides the SESSION (an automation's thinking level), and the model
+    can be switched mid-session — so the router, the one place that knows which client a
+    call lands on, is what keeps it off Anthropic and the Chat Completions vendors."""
+    from coworker.providers.router import ProviderRouter
+
+    seen: dict[str, dict] = {}
+
+    class _Wire:
+        def __init__(self, name, accepts):
+            self.name = name
+            self.accepts_reasoning_effort = accepts
+
+        def complete(self, **kw):
+            seen[self.name] = kw
+            return "ok"
+
+        def stream(self, **kw):
+            seen[self.name] = kw
+            return iter(())
+
+        def capabilities(self, model):
+            return None
+
+    router = ProviderRouter()
+    wires = {"responses": _Wire("responses", True), "chat": _Wire("chat", False)}
+    router._clients = {"openai": wires["responses"], "anthropic": wires["chat"]}
+    router._default = "openai"
+
+    router.complete(model="gpt-5.6-sol", messages=[], reasoning_effort="high", temperature=0.2)
+    assert seen["responses"]["reasoning_effort"] == "high"
+    assert seen["responses"]["temperature"] == 0.2  # other settings untouched
+
+    router.complete(model="anthropic:claude-fable-5", messages=[], reasoning_effort="high", temperature=0.2)
+    assert "reasoning_effort" not in seen["chat"]
+    assert seen["chat"]["temperature"] == 0.2
+
+    # streaming takes the same path
+    seen.clear()
+    list(router.stream(model="anthropic:claude-fable-5", messages=[], reasoning_effort="low"))
+    assert "reasoning_effort" not in seen["chat"]
+
+
+def test_responses_wires_declare_they_take_a_reasoning_level():
+    """The declaration is what the router reads — a new provider opts in by setting it."""
+    from coworker.providers.anthropic_provider import AnthropicProvider
+    from coworker.providers.azure_provider import AzureFoundryProvider
+    from coworker.providers.openai_responses import OpenAIResponsesProvider
+
+    assert OpenAIResponsesProvider.accepts_reasoning_effort
+    assert AzureFoundryProvider.accepts_reasoning_effort
+    assert not OpenAIProvider.accepts_reasoning_effort  # plain Chat Completions
+    assert not AnthropicProvider.accepts_reasoning_effort  # thinking is provider-level
