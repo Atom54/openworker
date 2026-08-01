@@ -160,6 +160,10 @@ export function App() {
     useState<WorkspaceCommandTrust | null>(null);
   const [agent, setAgent] = useState("cowork");
   const [model, setModel] = useState("gpt-5.6-sol");
+  // Reasoning level this session runs at (automation runs seed it; null = the
+  // model's own default). A stated fact, not a control — it is set from the
+  // automation, never from the composer.
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   // {full model id → context window in tokens} from the curated matrix (verified only);
@@ -593,6 +597,7 @@ export function App() {
         case "ready":
           setConnected(true);
           if (d.model) setModel(d.model);
+          setThinkingLevel(d.thinking ?? null);
           if (d.mode) setMode(d.mode);
           if (d.command_trust?.required) setWorkspaceTrustRequest(d.command_trust);
           // Cowork: adopt the server-provisioned scratch dir (only when we don't already have one).
@@ -1139,6 +1144,11 @@ export function App() {
   const runTaskNow = async (taskId: string, title?: string) => {
     const r = await runAutomation(taskId);
     if (!r || !r.ok) return;
+    // Adopt the automation's model up front: the composer sends its selection with every
+    // turn, so leaving the default here would override the automation's choice on the very
+    // first message (owner-hit 2026-07-28). `ready` confirms it, and the level with it.
+    if (r.model) setModel(r.model);
+    setThinkingLevel(r.thinking ?? null);
     pendingPromptRef.current = r.prompt;
     activeRunRef.current = { taskId, runId: r.run_id, sessionId: r.session_id };
     openRunSession(r.session_id, r.workspace, r.agent, { id: taskId, title: title || "" });
@@ -1161,6 +1171,7 @@ export function App() {
   // Persona name dropped for this release (owner ask 2026-07-22): personas are hidden,
   // so "Coworker" read as noise. The model (+ project folder) are the real fixed facts.
   const subtitleParts = [modelDisplay];
+  if (thinkingLevel) subtitleParts.push(`${thinkingLevel} thinking`);
   if (isProjectScoped(personaOf(agent)) && workspace) subtitleParts.push(baseName(workspace));
   const activeInfo = sessions.find((s) => s.session_id === sessionId);
   const activeTitle = activeInfo?.title || "New session";

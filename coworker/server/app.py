@@ -1765,6 +1765,9 @@ def create_app(manager: SessionManager) -> FastAPI:
                     "session_id": session_id,
                     "agent": getattr(engine, "agent_name", "code"),
                     "model": engine.model,
+                    # Reasoning level carried by this session (automation runs seed it) —
+                    # a fixed fact the header states; null for ordinary sessions.
+                    "thinking": (engine.model_settings or {}).get("reasoning_effort"),
                     "mode": engine.permissions.mode.value,
                     "workspace": (
                         str(getattr(engine, "executor").cwd)

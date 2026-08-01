@@ -96,6 +96,7 @@ class ConversationStore:
             "ALTER TABLE sessions ADD COLUMN renamed INTEGER DEFAULT 0",
             "ALTER TABLE sessions ADD COLUMN grants TEXT",
             "ALTER TABLE sessions ADD COLUMN compaction TEXT",
+            "ALTER TABLE sessions ADD COLUMN thinking TEXT",
         ):
             try:
                 self._conn.execute(ddl)
@@ -192,13 +193,14 @@ class ConversationStore:
             title = record.title or title_from(record.messages)
             self._conn.execute(
                 """
-                INSERT INTO sessions (session_id, workspace, model, mode, title, agent, n_msgs, messages, extra_roots, grants, compaction, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO sessions (session_id, workspace, model, mode, title, agent, n_msgs, messages, extra_roots, grants, compaction, thinking, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(session_id) DO UPDATE SET
                     workspace = excluded.workspace, model = excluded.model, mode = excluded.mode,
                     title = COALESCE(sessions.title, excluded.title), agent = excluded.agent,
                     n_msgs = excluded.n_msgs, messages = NULL, extra_roots = excluded.extra_roots,
                     grants = excluded.grants, compaction = excluded.compaction,
+                    thinking = excluded.thinking,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -212,6 +214,7 @@ class ConversationStore:
                     json.dumps(record.extra_roots or []),
                     json.dumps(record.grants or {}),
                     json.dumps(record.compaction or {}),
+                    record.thinking,
                 ),
             )
             self._conn.commit()
@@ -248,6 +251,7 @@ class ConversationStore:
             compaction=_load_grants(
                 row["compaction"] if "compaction" in row.keys() else None
             ),
+            thinking=(row["thinking"] if "thinking" in row.keys() else None),
             pinned=bool(row["pinned"]),
             archived=bool(row["archived"]),
             origin=row["origin"],

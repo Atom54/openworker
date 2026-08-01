@@ -4,6 +4,7 @@ import {
   deleteAutomation,
   getAutomation,
   getAutomations,
+  getSettings,
   markAutomationSeen,
   announceAutomationsChanged,
   updateAutomation,
@@ -16,6 +17,91 @@ import { AutomationQuickstart } from "./AutomationQuickstart";
 
 // Shared utility strings (the §28 page shell — mirrors IntegrationsView's constants).
 const CARD = "rounded-xl2 border border-line bg-panel";
+
+// Reasoning levels the backend accepts (SessionManager.THINKING_LEVELS).
+const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh"];
+
+/** The models list + labels the run-settings selects need, loaded once per view. */
+export interface ModelChoices {
+  models: string[];
+  labels: Record<string, string>;
+  appDefault: string;
+}
+
+/** Which models take a per-run reasoning level: the Responses API wires — native OpenAI
+ *  (bare ids) and Azure AI Foundry. Anthropic configures thinking on the provider and the
+ *  Chat Completions vendors reject the parameter, so the control is disabled for them
+ *  rather than silently ignored. The provider router enforces this too (`_supported`);
+ *  this is only what the form shows. */
+function takesThinkingLevel(model: string): boolean {
+  if (!model) return false;
+  return !model.includes(":") || model.startsWith("azure:");
+}
+
+/** Model + reasoning-level pickers, shared by the create form and the detail editor so
+ *  the two can't drift. `model: ""` / `thinking: ""` mean "follow the app default". */
+function RunSettings({
+  choices,
+  model,
+  thinking,
+  onModel,
+  onThinking,
+}: {
+  choices: ModelChoices | null;
+  model: string;
+  thinking: string;
+  onModel: (v: string) => void;
+  onThinking: (v: string) => void;
+}) {
+  if (!choices) return null;
+  const label = (m: string) => choices.labels[m] || m;
+  const effective = model || choices.appDefault;
+  const openai = takesThinkingLevel(effective);
+  return (
+    <div className="tmpl-sched">
+      <label className="tmpl-field">
+        <span>Model</span>
+        <select
+          className="tmpl-input tmpl-select"
+          value={model}
+          data-testid="automation-model"
+          onChange={(e) => onModel(e.target.value)}
+        >
+          <option value="">
+            App default{choices.appDefault ? ` (${label(choices.appDefault)})` : ""}
+          </option>
+          {choices.models.map((m) => (
+            <option key={m} value={m}>
+              {label(m)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="tmpl-field">
+        <span>Thinking</span>
+        <select
+          className="tmpl-input tmpl-select"
+          value={openai ? thinking : ""}
+          disabled={!openai}
+          data-testid="automation-thinking"
+          title={
+            openai
+              ? "How hard the model reasons on each run."
+              : `${label(effective)} keeps its own thinking setting — only OpenAI and Azure models take a level here.`
+          }
+          onChange={(e) => onThinking(e.target.value)}
+        >
+          <option value="">Model default</option>
+          {THINKING_LEVELS.map((lvl) => (
+            <option key={lvl} value={lvl}>
+              {lvl[0].toUpperCase() + lvl.slice(1)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
 
 // Parse a simple "min hour * * dow" cron back into the time + frequency the editor uses.
 // Falls back to 09:00 / daily for anything it doesn't recognize (e.g. agent-written crons).
@@ -82,12 +168,29 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
     return () => clearInterval(h);
   }, []);
 
+  // The curated model list feeds both the create form and the detail editor. Loaded once:
+  // it only changes from Settings, which leaves this surface anyway.
+  const [choices, setChoices] = useState<ModelChoices | null>(null);
+  useEffect(() => {
+    getSettings()
+      .then((s) =>
+        setChoices({
+          models: s.models || [],
+          labels: s.model_labels || {},
+          appDefault: s.model || "",
+        }),
+      )
+      .catch(() => {});
+  }, []);
+
   // Create from a payload, refresh the list, and open the new task's detail. `permissions`
   // rides through for quickstart recipes (§25 write grants).
   const create = async (payload: {
     title: string;
     instructions: string;
     cron?: string;
+    model?: string;
+    thinking?: string;
     permissions?: { tool: string; target: string; access: "read" | "write" }[];
   }) => {
     setBusy(payload.title);
@@ -110,6 +213,7 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
     return (
       <TaskDetail
         id={openId}
+        choices={choices}
         onBack={() => { setOpenId(null); refresh(); }}
         onOpenRun={onOpenRun}
         onRunNow={onRunNow}
@@ -144,6 +248,7 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
       {showForm && (
         <NewAutomationForm
           busy={busy !== null}
+          choices={choices}
           onCancel={() => setShowForm(false)}
           onCreate={create}
         />
@@ -200,15 +305,25 @@ function NewAutomationForm({
   busy,
   onCancel,
   onCreate,
+  choices,
 }: {
   busy: boolean;
   onCancel: () => void;
-  onCreate: (p: { title: string; instructions: string; cron?: string }) => void;
+  onCreate: (p: {
+    title: string;
+    instructions: string;
+    cron?: string;
+    model?: string;
+    thinking?: string;
+  }) => void;
+  choices: ModelChoices | null;
 }) {
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
   const [time, setTime] = useState("09:00");
   const [freq, setFreq] = useState("daily");
+  const [model, setModel] = useState("");
+  const [thinking, setThinking] = useState("");
 
   const valid = title.trim() && instructions.trim();
 
@@ -252,6 +367,13 @@ function NewAutomationForm({
           </select>
         </label>
       </div>
+      <RunSettings
+        choices={choices}
+        model={model}
+        thinking={thinking}
+        onModel={setModel}
+        onThinking={setThinking}
+      />
       <div className="tmpl-form-actions">
         <button
           className="btn-primary sm"
@@ -261,6 +383,8 @@ function NewAutomationForm({
               title: title.trim(),
               instructions: instructions.trim(),
               cron: toCron(time, freq),
+              model,
+              thinking,
             })
           }
         >
@@ -274,11 +398,13 @@ function NewAutomationForm({
 
 function TaskDetail({
   id,
+  choices,
   onBack,
   onOpenRun,
   onRunNow,
 }: {
   id: string;
+  choices: ModelChoices | null;
   onBack: () => void;
   onOpenRun: (
     sessionId: string,
@@ -295,6 +421,8 @@ function TaskDetail({
   const [instructions, setInstructions] = useState("");
   const [time, setTime] = useState("09:00");
   const [freq, setFreq] = useState("daily");
+  const [model, setModel] = useState("");
+  const [thinking, setThinking] = useState("");
   const [saving, setSaving] = useState(false);
 
   // The seen mark AS OF opening — the "new" pills compare against this frozen value
@@ -338,6 +466,8 @@ function TaskDetail({
     const { time: t, freq: f } = fromCron(task.schedule_raw?.cron);
     setTime(t);
     setFreq(f);
+    setModel(task.model || "");
+    setThinking(task.thinking || "");
     setEditing(true);
   };
   const saveEdit = async () => {
@@ -347,6 +477,8 @@ function TaskDetail({
         title: title.trim(),
         instructions: instructions.trim(),
         cron: toCron(time, freq),
+        model,
+        thinking,
       });
       await refresh();
       setEditing(false);
@@ -404,20 +536,29 @@ function TaskDetail({
         </div>
 
         {editing ? (
-          <div className="tmpl-sched sched-edit-sched">
-            <label className="tmpl-field">
-              <span>At</span>
-              <input type="time" className="tmpl-input tmpl-time" value={time} onChange={(e) => setTime(e.target.value)} />
-            </label>
-            <label className="tmpl-field">
-              <span>Repeat</span>
-              <select className="tmpl-input tmpl-select" value={freq} onChange={(e) => setFreq(e.target.value)}>
-                <option value="daily">Every day</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekends">Weekends</option>
-              </select>
-            </label>
-          </div>
+          <>
+            <div className="tmpl-sched sched-edit-sched">
+              <label className="tmpl-field">
+                <span>At</span>
+                <input type="time" className="tmpl-input tmpl-time" value={time} onChange={(e) => setTime(e.target.value)} />
+              </label>
+              <label className="tmpl-field">
+                <span>Repeat</span>
+                <select className="tmpl-input tmpl-select" value={freq} onChange={(e) => setFreq(e.target.value)}>
+                  <option value="daily">Every day</option>
+                  <option value="weekdays">Weekdays</option>
+                  <option value="weekends">Weekends</option>
+                </select>
+              </label>
+            </div>
+            <RunSettings
+              choices={choices}
+              model={model}
+              thinking={thinking}
+              onModel={setModel}
+              onThinking={setThinking}
+            />
+          </>
         ) : (
           <div className="conn-meta">
             <label className="switch">
@@ -425,6 +566,10 @@ function TaskDetail({
               <span className="slider" />
             </label>{" "}
             {task.enabled ? `Active · next ${fmt(task.next_run)}` : "Paused"} · {task.schedule}
+            {task.model && (
+              <> · {choices?.labels[task.model] || task.model}</>
+            )}
+            {task.thinking && <> · {task.thinking} thinking</>}
           </div>
         )}
 

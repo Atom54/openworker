@@ -1551,6 +1551,11 @@ export interface Automation {
   schedule_raw?: { kind: string; cron?: string | null; fire_at?: string | null; timezone?: string };
   workspace: string;
   agent: string;
+  // Per-automation run overrides; null = follow the app default. `thinking` is the
+  // reasoning level ("minimal" | "low" | "medium" | "high"), honored on native OpenAI
+  // models only — other wires spell thinking differently and reject the parameter.
+  model?: string | null;
+  thinking?: string | null;
   enabled: boolean;
   next_run: number | null;
   last_run: number | null;
@@ -1636,6 +1641,9 @@ export async function createAutomation(payload: {
   cron?: string;
   fire_at?: string;
   timezone?: string;
+  // Run overrides; omit (or "") to follow the app default.
+  model?: string;
+  thinking?: string;
   // §25 standing grants (the creating surface rendered them; submit IS the consent).
   // Only target-bound write entries survive server-side validation.
   permissions?: { tool: string; target: string; access: "read" | "write" }[];
@@ -1675,6 +1683,10 @@ export interface PreparedRun {
   workspace: string;
   agent: string;
   prompt: string;
+  // The automation's own model + reasoning level: the composer adopts them so the run
+  // doesn't get the app default pushed back over it.
+  model?: string;
+  thinking?: string | null;
 }
 
 /** Prepare a live manual run: returns the session to open + the opening prompt to send. */

@@ -17,6 +17,11 @@ class SessionRecord:
     model: str
     mode: str
     messages: list[dict[str, Any]] = field(default_factory=list)
+    # Reasoning level for this session's turns (None = the model's own default). Seeded from
+    # the automation when the session IS an automation run, so a follow-up in that thread
+    # reasons the same way the run did. Providers that can't take it have it dropped by the
+    # provider router.
+    thinking: Optional[str] = None
     title: Optional[str] = None
     agent: str = "code"
     message_count: int = 0
