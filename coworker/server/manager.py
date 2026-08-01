@@ -1555,6 +1555,9 @@ class SessionManager:
         "qwen": ["qwen3-max", "qwen3-coder-plus", "qwen-plus"],
         "xai": ["grok-4.3", "grok-4"],
         "mistral": ["mistral-large-latest", "mistral-small-latest"],
+        # Azure entries are DEPLOYMENT names, which the user picks — the Foundry portal
+        # defaults them to the model name, so these are starting hints, not a catalog.
+        "azure": ["gpt-5.6-sol", "gpt-5.5", "grok-4.3", "DeepSeek-V4-Pro"],
     }
 
     def _suggested_models(self, name: str) -> list[str]:

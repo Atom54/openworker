@@ -11,6 +11,9 @@ import gemini from "./logos/gemini.svg";
 import ollama from "./logos/ollama.svg";
 import bedrock from "./logos/bedrock.svg";
 import vertex from "./logos/vertex.svg";
+// azure.svg is a simplified in-house mark in the Azure blues (the lobe-icons set we vendor
+// the others from has no Azure AI Foundry entry).
+import azure from "./logos/azure.svg";
 import openrouter from "./logos/openrouter.svg";
 import fireworks from "./logos/fireworks.svg";
 import together from "./logos/together.svg";
@@ -31,6 +34,7 @@ export const PROVIDER_LOGOS: Record<string, string> = {
   ollama,
   bedrock,
   vertex,
+  azure,
   openrouter,
   fireworks,
   together,
@@ -51,6 +55,7 @@ export const PROVIDER_ORDER = [
   "ollama",
   "bedrock",
   "vertex",
+  "azure",
   "openrouter",
   "fireworks",
   "together",

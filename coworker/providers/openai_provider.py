@@ -51,6 +51,9 @@ def resolve_api_key(secrets: Any = None) -> Optional[str]:
 # generation, an alias we didn't list), retry once at effort none so the user gets a
 # working turn instead of a 400.
 _EFFORT_ERROR = "function tools with reasoning_effort are not supported"
+# OpenAI's version of that 400 names the escape hatch ("…or set reasoning_effort to 'none'");
+# Azure AI Foundry's omits it and points only at /v1/responses. See `_param_fix_retry`.
+_EFFORT_NONE_HINT = "set reasoning_effort to 'none'"
 
 
 def _pin_reasoning_effort(kwargs: dict[str, Any]) -> None:
@@ -92,8 +95,18 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
     contract as the reasoning_effort retry: fix exactly what the server named.
     """
     msg = str(exc).lower()
-    if _EFFORT_ERROR in msg and kwargs.get("reasoning_effort") != "none":
-        return {**kwargs, "reasoning_effort": "none"}
+    if _EFFORT_ERROR in msg:
+        # Two backends complain about the same combination and want opposite fixes, and each
+        # says which: OpenAI offers the `none` escape hatch in the message, while Azure AI
+        # Foundry's OpenAI-compatible surface only points at /v1/responses — it rejects the
+        # parameter outright, `none` included (probed against a live gpt-5.6-terra deployment
+        # 2026-07-28; omitting it returns 200). Follow the server's own wording.
+        if _EFFORT_NONE_HINT in msg and kwargs.get("reasoning_effort") != "none":
+            return {**kwargs, "reasoning_effort": "none"}
+        if "reasoning_effort" in kwargs:
+            fixed = dict(kwargs)
+            fixed.pop("reasoning_effort")
+            return fixed
     if _MAX_TOKENS_ERROR in msg and "max_tokens" in kwargs:
         fixed = dict(kwargs)
         fixed["max_completion_tokens"] = fixed.pop("max_tokens")

@@ -7,12 +7,13 @@ a `ProviderClient`. The `ProviderRouter` selects a descriptor by the `provider:`
 model string and builds (and caches) its client from the matching SecretStore profile.
 
 Today: `openai` (the default — native models via the Responses API; an optional custom
-endpoint covering Azure OpenAI's `/openai/v1` and any OpenAI-compliant gateway keeps the
-Chat Completions path), `anthropic` (native Messages API via
-`AnthropicProvider`), `gemini` (native Google GenAI API via `GeminiProvider`), `bedrock`
-(models in the user's own AWS account — Claude natively, everything else via Converse),
-`vertex` (the user's own GCP project — Gemini and Claude natively, open-weight via the
-MaaS endpoint), and `ollama` (local, OpenAI-compatible `/v1`).
+endpoint covering any OpenAI-compliant gateway keeps the Chat Completions path),
+`anthropic` (native Messages API via `AnthropicProvider`), `gemini` (native Google GenAI
+API via `GeminiProvider`), `bedrock` (models in the user's own AWS account — Claude
+natively, everything else via Converse), `vertex` (the user's own GCP project — Gemini and
+Claude natively, open-weight via the MaaS endpoint), `azure` (the user's own Azure AI
+Foundry resource, through its OpenAI-compatible `/openai/v1` API), and `ollama` (local,
+OpenAI-compatible `/v1`).
 """
 
 from __future__ import annotations
@@ -112,6 +113,26 @@ def _normalize_ollama_url(url: Optional[str]) -> str:
     return base
 
 
+def _normalize_azure_url(url: Optional[str]) -> str:
+    """Return the OpenAI-compatible v1 base for an Azure AI Foundry endpoint.
+
+    The Foundry portal shows the resource root (`https://<res>.services.ai.azure.com`, or the
+    legacy `https://<res>.openai.azure.com`); the OpenAI-compatible surface lives under
+    `/openai/v1`. Accepts the root, `.../openai`, or the full `.../openai/v1`, with or without a
+    trailing slash, and a pasted host with no scheme.
+    """
+    base = (url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    if "://" not in base:
+        base = "https://" + base
+    if base.endswith("/openai/v1"):
+        return base
+    if base.endswith("/openai"):
+        return base + "/v1"
+    return base + "/openai/v1"
+
+
 def _build_openai(profile: dict[str, Any], secrets: Any) -> ProviderClient:
     # Key resolution stays in resolve_api_key (explicit → env → SecretStore), so we just
     # hand over the SecretStore. Stock OpenAI (no custom endpoint) speaks the Responses
@@ -179,6 +200,27 @@ def _build_vertex(profile: dict[str, Any], secrets: Any) -> ProviderClient:
         service_account_json=get("service_account_json"),
         api_key=get("vertex_api_key"),
     )
+
+
+def _build_azure(profile: dict[str, Any], secrets: Any) -> ProviderClient:
+    # Endpoint is per-resource, so it only ever comes from the stored profile — there is no
+    # default to fall back to, and a blank one would send an Azure key to api.openai.com.
+    # The key follows the compat-vendor rule: this provider's own profile or its own env var,
+    # never the OpenAI key. Both missing ⇒ fail fast, named.
+    p = profile or {}
+    endpoint = (p.get("endpoint") or "").strip()
+    api_key = (p.get("api_key") or "").strip() or os.environ.get(
+        "AZURE_OPENAI_API_KEY", ""
+    ).strip()
+    if not endpoint:
+        raise RuntimeError(
+            "No Azure AI Foundry endpoint configured — add it in Settings ▸ Models."
+        )
+    if not api_key:
+        raise RuntimeError(
+            "No Azure AI Foundry API key configured — add it in Settings ▸ Models."
+        )
+    return OpenAIProvider(api_key=api_key, base_url=_normalize_azure_url(endpoint))
 
 
 def _build_ollama(profile: dict[str, Any], secrets: Any) -> ProviderClient:
@@ -462,6 +504,34 @@ DESCRIPTORS: list[ProviderDescriptor] = [
         blurb="Runs models inside your own Google Cloud project. Gemini and Claude use "
         "their native APIs; open-weight models go through the Vertex MaaS endpoint.",
     ),
+    ProviderDescriptor(
+        name="azure",
+        title="Azure AI Foundry",
+        needs_key=True,
+        fields=[
+            ProviderField(
+                "endpoint",
+                "Foundry endpoint",
+                secret=False,
+                placeholder="https://my-resource.services.ai.azure.com",
+                help="Your resource's endpoint from the Foundry portal (Overview ▸ Endpoints). "
+                "The OpenAI-compatible /openai/v1 path is added automatically; the legacy "
+                "…openai.azure.com host works too.",
+            ),
+            ProviderField(
+                "api_key",
+                "Azure API key",
+                secret=True,
+            ),
+        ],
+        build=_build_azure,
+        # Deployment names are chosen by the user; the portal defaults them to the model name,
+        # which is why a model id is a sane starting suggestion rather than a guarantee.
+        recommended_model="gpt-5.6-sol",
+        env_key="AZURE_OPENAI_API_KEY",
+        blurb="Runs the models deployed in your own Azure AI Foundry resource, through its "
+        "OpenAI-compatible v1 API. Model names here are your DEPLOYMENT names, not vendor ids.",
+    ),
     # OpenAI-compatible vendors, listed as first-class providers so users don't need to know the
     # "point the OpenAI slot at a different endpoint" trick (owner call, 2026-07-04). Each keeps
     # its own key profile; the endpoint is prefilled and editable (regional variants in `help`).
@@ -595,16 +665,23 @@ def build_provider_client(
 
 
 def descriptor_configured(d: ProviderDescriptor, profile: dict[str, Any]) -> bool:
-    """Whether a provider is usable with the given stored profile. Single-key providers:
-    a stored or env key. Multi-field cloud providers (no `api_key` field, e.g. Bedrock):
-    every required field present — their actual credentials may be ambient (~/.aws, ADC).
+    """Whether a provider is usable with the given stored profile. Key providers: a stored or
+    env key, PLUS any other required field (Azure's per-resource endpoint — a key alone can't
+    reach it, and there is no default to fall back to). Multi-field cloud providers (no
+    `api_key` field, e.g. Bedrock): every required field present — their actual credentials may
+    be ambient (~/.aws, ADC).
     """
     if not d.needs_key:
         return True  # keyless (Ollama) — usable out of the box
     profile = profile or {}
     if any(f.key == "api_key" for f in d.fields):
-        return bool(profile.get("api_key")) or bool(
+        has_key = bool(profile.get("api_key")) or bool(
             d.env_key and os.environ.get(d.env_key)
+        )
+        return has_key and all(
+            profile.get(f.key)
+            for f in d.fields
+            if f.required and f.key != "api_key"
         )
     return all(profile.get(f.key) for f in d.fields if f.required)
 
@@ -816,6 +893,12 @@ def verify_provider_key(
         return _verify_bedrock(fields or {}, timeout)
     if name == "vertex":
         return _verify_vertex(fields or {}, timeout)
+    if name == "azure":
+        # The endpoint lives in its own field (there is no shared default), so it can't ride
+        # the generic base_url path — normalize it here and reuse the OpenAI /models probe.
+        base_url = _normalize_azure_url((fields or {}).get("endpoint"))
+        if not base_url:
+            return {"ok": False, "error": "Enter your Foundry endpoint to test."}
     try:
         if name == "anthropic":
             resp = httpx.get(

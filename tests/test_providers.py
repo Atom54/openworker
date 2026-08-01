@@ -186,6 +186,59 @@ def test_effort_400_from_an_unpinned_model_retries_once_at_none():
     assert out[-1].turn.text == "ok" and len(client.chat.completions.calls) == 4
 
 
+# Azure AI Foundry's wording: no "or set reasoning_effort to 'none'" escape hatch, so the
+# only fix is to omit the parameter (verified against a live deployment 2026-07-28).
+_EFFORT_400_AZURE = (
+    "Error code: 400 - {'error': {'message': 'Function tools with reasoning_effort are "
+    "not supported for %s in /v1/chat/completions. Please use /v1/responses instead.', "
+    "'type': 'invalid_request_error', 'param': 'reasoning_effort', 'code': None}}"
+)
+
+
+class _EffortForbiddingCompletions:
+    """Azure AI Foundry: tools + reasoning_effort → the 400, 'none' included."""
+
+    def __init__(self, response):
+        self._response = response
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("tools") and "reasoning_effort" in kwargs:
+            raise RuntimeError(_EFFORT_400_AZURE % kwargs["model"])
+        if kwargs.get("stream"):
+            return iter([_chunk(content="ok"), _chunk(finish="stop")])
+        return self._response
+
+
+def test_effort_400_without_the_none_hint_drops_the_parameter():
+    """The proactive pin sends `none`; a backend that refuses the parameter at all must not
+    leave the user with a 400 (owner-hit 2026-07-28 on azure:gpt-5.6-terra)."""
+    client = _FakeClient(_response(content="x"))
+    client.chat.completions = _EffortForbiddingCompletions(_response(content="x"))
+    provider = OpenAIProvider(client=client)
+
+    turn = provider.complete(model="gpt-5.6-terra", messages=[], tools=_TOOLS)
+    calls = client.chat.completions.calls
+    assert turn.text == "x" and len(calls) == 2
+    assert calls[0]["reasoning_effort"] == "none"  # the pin
+    assert "reasoning_effort" not in calls[1]  # dropped, not re-pinned
+
+    # An explicit caller choice is dropped too — this server never accepts the parameter,
+    # so stepping down to `none` first would just burn a round trip.
+    provider.complete(
+        model="gpt-5.6-terra", messages=[], tools=_TOOLS, reasoning_effort="medium"
+    )
+    assert [c.get("reasoning_effort", "<absent>") for c in calls[2:]] == [
+        "medium",
+        "<absent>",
+    ]
+
+    # streaming path fixes itself the same way
+    out = list(provider.stream(model="gpt-5.6-terra", messages=[], tools=_TOOLS))
+    assert out[-1].turn.text == "ok"
+
+
 def test_max_tokens_rejection_retries_as_max_completion_tokens():
     """Reasoning-routed models 400 on max_tokens (want max_completion_tokens); compat
     servers know only max_tokens — so the swap happens on rejection, never up front.
@@ -417,6 +470,97 @@ def test_reseller_descriptors_and_matrix_stay_in_lockstep():
         # full ids in the matrix must round-trip: prefix + bare == matrix key
         base = next(f for f in d.fields if f.key == "base_url")
         assert base.default.startswith("https://")
+
+
+# -- Azure AI Foundry (OpenAI-compatible v1 API on a per-resource endpoint) ---------
+
+
+def test_azure_endpoint_normalizes_to_the_openai_v1_base():
+    """Every shape the Foundry portal hands out lands on the same OpenAI-compatible base."""
+    from coworker.providers.registry import _normalize_azure_url
+
+    want = "https://res.services.ai.azure.com/openai/v1"
+    for pasted in (
+        "https://res.services.ai.azure.com",
+        "https://res.services.ai.azure.com/",
+        "https://res.services.ai.azure.com/openai",
+        "https://res.services.ai.azure.com/openai/v1",
+        "https://res.services.ai.azure.com/openai/v1/",
+        "  res.services.ai.azure.com  ",  # no scheme, stray whitespace
+    ):
+        assert _normalize_azure_url(pasted) == want, pasted
+    # Legacy Azure OpenAI host takes the same path; empty stays empty (the caller errors).
+    assert (
+        _normalize_azure_url("https://res.openai.azure.com")
+        == "https://res.openai.azure.com/openai/v1"
+    )
+    assert _normalize_azure_url("") == "" and _normalize_azure_url(None) == ""
+
+
+def test_azure_builder_uses_the_normalized_endpoint_and_its_own_key(monkeypatch):
+    from coworker.providers.registry import build_provider_client
+
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    p = build_provider_client(
+        "azure", {"endpoint": "https://res.services.ai.azure.com", "api_key": "az-key"}, None
+    )
+    assert p._base_url == "https://res.services.ai.azure.com/openai/v1"
+    assert p._api_key == "az-key"
+
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "env-key")
+    p2 = build_provider_client("azure", {"endpoint": "https://res.services.ai.azure.com"}, None)
+    assert p2._api_key == "env-key"
+
+
+def test_azure_fails_fast_without_endpoint_or_key(monkeypatch):
+    """No endpoint ⇒ no silent fallback to api.openai.com, and never the OpenAI key."""
+    import pytest
+
+    from coworker.providers.registry import build_provider_client
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-real")
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="endpoint"):
+        build_provider_client("azure", {"api_key": "az-key"}, None)
+    with pytest.raises(RuntimeError, match="Azure"):
+        build_provider_client("azure", {"endpoint": "https://res.services.ai.azure.com"}, None)
+
+
+def test_azure_needs_endpoint_before_it_counts_as_configured(monkeypatch):
+    """A key alone can't reach a per-resource endpoint — the gallery must not claim ✓."""
+    from coworker.providers.registry import descriptor_configured, get_descriptor
+
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    d = get_descriptor("azure")
+    assert not descriptor_configured(d, {"api_key": "az-key"})
+    assert not descriptor_configured(d, {"endpoint": "https://res.services.ai.azure.com"})
+    assert descriptor_configured(
+        d, {"endpoint": "https://res.services.ai.azure.com", "api_key": "az-key"}
+    )
+    # The other key providers keep their key-only contract (optional endpoints).
+    assert descriptor_configured(get_descriptor("openai"), {"api_key": "sk-x"})
+    assert descriptor_configured(get_descriptor("zai"), {"api_key": "zk"})
+
+
+def test_azure_models_route_by_deployment_name():
+    """Model ids are the user's DEPLOYMENT names, so only the prefix is ours to strip."""
+    from coworker.providers.router import ProviderRouter
+
+    router = ProviderRouter.__new__(ProviderRouter)  # only using _provider_name (stateless)
+    assert router._provider_name("azure:my-gpt-deploy") == "azure"
+    assert ProviderRouter._bare("azure:my-gpt-deploy") == "my-gpt-deploy"
+    # A deployment named after the model keeps that model's capabilities via the heuristics.
+    assert capabilities_for("azure:gpt-5.6-sol").vision
+    assert capabilities_for("azure:prod-chat").tools
+
+
+def test_azure_recommended_model_is_in_the_suggested_list():
+    """set_provider only auto-adds the recommended model when it's suggested."""
+    from coworker.providers.registry import get_descriptor
+    from coworker.server.manager import SessionManager
+
+    d = get_descriptor("azure")
+    assert d.recommended_model in SessionManager.COMPAT_MODELS["azure"]
 
 
 def test_foreign_sidecars_stripped_from_outbound_messages():

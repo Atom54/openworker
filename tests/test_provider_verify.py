@@ -59,6 +59,29 @@ def test_verify_openai_custom_endpoint(monkeypatch):
     assert cap["url"] == "https://gw.example/openai/v1/models"
 
 
+def test_verify_azure_probes_the_normalized_endpoint(monkeypatch):
+    """Azure's endpoint arrives in `fields` (its own key, no shared default) — the probe
+    normalizes it to /openai/v1 and reuses the OpenAI Bearer /models call."""
+    cap: dict = {}
+    _patch_get(monkeypatch, status=200, capture=cap)
+    assert verify_provider_key(
+        "azure",
+        api_key="az-key",
+        fields={"endpoint": "https://res.services.ai.azure.com/"},
+    ) == {"ok": True}
+    assert cap["url"] == "https://res.services.ai.azure.com/openai/v1/models"
+    assert cap["headers"]["Authorization"] == "Bearer az-key"
+
+
+def test_verify_azure_without_endpoint_says_so(monkeypatch):
+    """No endpoint ⇒ say what's missing instead of probing api.openai.com with an Azure key."""
+    _patch_get(monkeypatch, status=200)
+    assert verify_provider_key("azure", api_key="az-key", fields={}) == {
+        "ok": False,
+        "error": "Enter your Foundry endpoint to test.",
+    }
+
+
 def test_verify_bad_key_is_invalid(monkeypatch):
     _patch_get(monkeypatch, status=401)
     assert verify_provider_key("openai", api_key="sk-bad") == {
