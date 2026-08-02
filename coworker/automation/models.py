@@ -5,12 +5,14 @@ in the task's own thread + working folder.
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-_DOW = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# Cron's day-of-week numbering: 0 = Sunday … 6 = Saturday.
+_DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
 def _now() -> float:
@@ -64,6 +66,34 @@ def _human_time(hour: int, minute: int) -> str:
     return f"{h12}:{minute:02d} {ampm}"
 
 
+# "5#2" — the 2nd Friday of the month (croniter's nth-weekday syntax).
+_NTH_RE = re.compile(r"([0-7])#([1-5])")
+_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th"}
+
+
+def _expand_dow(field: str) -> list[int]:
+    """A cron day-of-week field as its individual days ('1-5' → [1..5]), or [] if it uses
+    syntax richer than plain numbers, ranges and lists."""
+    days: set[int] = set()
+    for token in field.split(","):
+        if token.isdigit():
+            days.add(int(token) % 7)
+            continue
+        start, sep, end = token.partition("-")
+        if not sep or not start.isdigit() or not end.isdigit():
+            return []
+        a, b = int(start) % 7, int(end) % 7
+        if a > b:
+            return []
+        days.update(range(a, b + 1))
+    return sorted(days)
+
+
+def _week_order(days: list[int]) -> list[int]:
+    """Cron counts from Sunday; a week reads Monday-first."""
+    return sorted(days, key=lambda d: (d - 1) % 7)
+
+
 @dataclass
 class Schedule:
     kind: str  # "cron" | "once"
@@ -87,10 +117,24 @@ class Schedule:
             return self.cron  # non-trivial cron (ranges/steps) — show as-is
         if dom == "*" and dow == "*":
             return f"Every day at ~{t}"
-        if dom == "*" and dow.isdigit():
-            return f"Every {_DOW[int(dow) % 7]} at ~{t}"
-        if dom.isdigit() and dow == "*":
-            return f"Monthly on day {dom} at ~{t}"
+        if dom == "*":
+            nth = _NTH_RE.fullmatch(dow)
+            if nth:
+                day = _DOW[int(nth.group(1)) % 7]
+                return f"Every {_ORDINALS[int(nth.group(2))]} {day} at ~{t}"
+            days = _expand_dow(dow)
+            if days == [1, 2, 3, 4, 5]:
+                return f"Every weekday at ~{t}"
+            if days == [0, 6]:
+                return f"Every weekend day at ~{t}"
+            if days:
+                names = ", ".join(_DOW[d] for d in _week_order(days))
+                return f"Every {names} at ~{t}"
+        if dow == "*":
+            if dom.upper() == "L":
+                return f"Monthly on the last day at ~{t}"
+            if dom.isdigit():
+                return f"Monthly on day {dom} at ~{t}"
         return self.cron
 
     def to_dict(self) -> dict:

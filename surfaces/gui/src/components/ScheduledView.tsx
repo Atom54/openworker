@@ -14,6 +14,7 @@ import {
 import { Icon } from "./Icon";
 import { PanelHead } from "./IntegrationsView";
 import { AutomationQuickstart } from "./AutomationQuickstart";
+import { ScheduleFields, looksLikeCron } from "./Recurrence";
 
 // Shared utility strings (the §28 page shell — mirrors IntegrationsView's constants).
 const CARD = "rounded-xl2 border border-line bg-panel";
@@ -103,27 +104,8 @@ function RunSettings({
   );
 }
 
-// Parse a simple "min hour * * dow" cron back into the time + frequency the editor uses.
-// Falls back to 09:00 / daily for anything it doesn't recognize (e.g. agent-written crons).
-function fromCron(cron?: string | null): { time: string; freq: string } {
-  const parts = (cron || "").trim().split(/\s+/);
-  if (parts.length !== 5) return { time: "09:00", freq: "daily" };
-  const [m, h, , , dow] = parts;
-  const hh = String(Math.min(23, Math.max(0, parseInt(h, 10) || 9))).padStart(2, "0");
-  const mm = String(Math.min(59, Math.max(0, parseInt(m, 10) || 0))).padStart(2, "0");
-  const freq = dow === "1-5" ? "weekdays" : dow === "0,6" || dow === "6,0" ? "weekends" : "daily";
-  return { time: `${hh}:${mm}`, freq };
-}
-
 const fmt = (t: number | null) =>
   t ? new Date(t * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
-
-// Map a simple time-of-day + frequency selection to a 5-field cron string.
-function toCron(time: string, freq: string): string {
-  const [h, m] = (time || "09:00").split(":").map((x) => parseInt(x, 10) || 0);
-  const dow = freq === "weekdays" ? "1-5" : freq === "weekends" ? "0,6" : "*";
-  return `${m} ${h} * * ${dow}`;
-}
 
 // The §28 page shell: full-bleed main, centered ≤4xl column — same as Connectors/Activity/Inbox.
 function Shell({ children }: { children: React.ReactNode }) {
@@ -320,12 +302,11 @@ function NewAutomationForm({
 }) {
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [time, setTime] = useState("09:00");
-  const [freq, setFreq] = useState("daily");
+  const [cron, setCron] = useState("0 9 * * *");
   const [model, setModel] = useState("");
   const [thinking, setThinking] = useState("");
 
-  const valid = title.trim() && instructions.trim();
+  const valid = title.trim() && instructions.trim() && looksLikeCron(cron);
 
   return (
     <div className={CARD + " tmpl-form p-4 mb-4"}>
@@ -344,29 +325,7 @@ function NewAutomationForm({
         value={instructions}
         onChange={(e) => setInstructions(e.target.value)}
       />
-      <div className="tmpl-sched">
-        <label className="tmpl-field">
-          <span>At</span>
-          <input
-            type="time"
-            className="tmpl-input tmpl-time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-          />
-        </label>
-        <label className="tmpl-field">
-          <span>Repeat</span>
-          <select
-            className="tmpl-input tmpl-select"
-            value={freq}
-            onChange={(e) => setFreq(e.target.value)}
-          >
-            <option value="daily">Every day</option>
-            <option value="weekdays">Weekdays</option>
-            <option value="weekends">Weekends</option>
-          </select>
-        </label>
-      </div>
+      <ScheduleFields onCron={setCron} />
       <RunSettings
         choices={choices}
         model={model}
@@ -382,7 +341,7 @@ function NewAutomationForm({
             onCreate({
               title: title.trim(),
               instructions: instructions.trim(),
-              cron: toCron(time, freq),
+              cron,
               model,
               thinking,
             })
@@ -419,11 +378,12 @@ function TaskDetail({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [time, setTime] = useState("09:00");
-  const [freq, setFreq] = useState("daily");
+  const [cron, setCron] = useState("0 9 * * *");
   const [model, setModel] = useState("");
   const [thinking, setThinking] = useState("");
   const [saving, setSaving] = useState(false);
+  // The server has the last word on a cron (croniter parses what the shape check can't).
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // The seen mark AS OF opening — the "new" pills compare against this frozen value
   // while mark-seen advances the stored one (badge clears; highlights survive).
@@ -463,23 +423,27 @@ function TaskDetail({
   const startEdit = () => {
     setTitle(task.title);
     setInstructions(task.instructions);
-    const { time: t, freq: f } = fromCron(task.schedule_raw?.cron);
-    setTime(t);
-    setFreq(f);
     setModel(task.model || "");
     setThinking(task.thinking || "");
+    setSaveError(null);
     setEditing(true);
   };
   const saveEdit = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
-      await updateAutomation(id, {
+      const res = await updateAutomation(id, {
         title: title.trim(),
         instructions: instructions.trim(),
-        cron: toCron(time, freq),
+        cron,
         model,
         thinking,
       });
+      if (res && res.ok === false) {
+        // A rejected cron must not close the editor — the typed schedule would be lost.
+        setSaveError(res.error || "could not save");
+        return;
+      }
       await refresh();
       setEditing(false);
     } finally {
@@ -516,7 +480,11 @@ function TaskDetail({
           <div className="sched-actions">
             {editing ? (
               <>
-                <button className="btn-primary sm" disabled={saving || !title.trim() || !instructions.trim()} onClick={saveEdit}>
+                <button
+                  className="btn-primary sm"
+                  disabled={saving || !title.trim() || !instructions.trim() || !looksLikeCron(cron)}
+                  onClick={saveEdit}
+                >
                   {saving ? "Saving…" : "Save"}
                 </button>
                 <button className="link" onClick={() => setEditing(false)}>cancel</button>
@@ -537,20 +505,10 @@ function TaskDetail({
 
         {editing ? (
           <>
-            <div className="tmpl-sched sched-edit-sched">
-              <label className="tmpl-field">
-                <span>At</span>
-                <input type="time" className="tmpl-input tmpl-time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </label>
-              <label className="tmpl-field">
-                <span>Repeat</span>
-                <select className="tmpl-input tmpl-select" value={freq} onChange={(e) => setFreq(e.target.value)}>
-                  <option value="daily">Every day</option>
-                  <option value="weekdays">Weekdays</option>
-                  <option value="weekends">Weekends</option>
-                </select>
-              </label>
+            <div className="sched-edit-sched">
+              <ScheduleFields initial={task.schedule_raw?.cron} onCron={setCron} />
             </div>
+            {saveError && <div className="mcp-error">{saveError}</div>}
             <RunSettings
               choices={choices}
               model={model}

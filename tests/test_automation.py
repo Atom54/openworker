@@ -34,8 +34,19 @@ def _task(**kw) -> ScheduledTask:
 # -- model / schedule ----------------------------------------------------------
 def test_schedule_human():
     assert Schedule("cron", cron="10 19 * * *").human() == "Every day at ~7:10 PM"
-    assert "Monday" in Schedule("cron", cron="0 9 * * 0").human()
+    # Cron day-of-week is 0 = Sunday … 5 = Friday (the picker's per-day options ride on this).
+    assert "Sunday" in Schedule("cron", cron="0 9 * * 0").human()
+    assert Schedule("cron", cron="0 9 * * 5").human() == "Every Friday at ~9:00 AM"
+    assert Schedule("cron", cron="0 9 * * 1-5").human() == "Every weekday at ~9:00 AM"
+    assert Schedule("cron", cron="0 9 * * 0,6").human() == "Every weekend day at ~9:00 AM"
+    # Multi-day, nth-weekday and last-day-of-month — the picker's richer shapes.
+    assert Schedule("cron", cron="30 8 * * 2,4").human() == "Every Tuesday, Thursday at ~8:30 AM"
+    assert Schedule("cron", cron="0 9 * * 0,3").human() == "Every Wednesday, Sunday at ~9:00 AM"
+    assert Schedule("cron", cron="0 9 * * 5#2").human() == "Every 2nd Friday at ~9:00 AM"
+    assert Schedule("cron", cron="0 9 L * *").human() == "Monthly on the last day at ~9:00 AM"
     assert Schedule("cron", cron="0 9 5 * *").human() == "Monthly on day 5 at ~9:00 AM"
+    # Nothing the labeler can express → the cron itself, never a wrong label.
+    assert Schedule("cron", cron="*/15 * * * *").human() == "*/15 * * * *"
     assert Schedule("once", fire_at="2026-07-01T09:00:00").human().startswith("Once at")
 
 

@@ -22,7 +22,12 @@ import { SelectMenu } from "./SelectMenu";
 // The `ob-*` testids moved here with the machinery.
 
 // "When" = day choice × free time (owner call 2026-07-11); the cron assembles from the two.
+// A template picks ONE day (or a preset); the full recurrence picker lives in Recurrence.tsx,
+// behind the create form and the detail editor where the whole cron surface is on offer.
 const DAYS: Record<string, { label: string; dow: string }> = {
+  daily: { label: "Every day", dow: "*" },
+  weekdays: { label: "Weekdays", dow: "1-5" },
+  weekends: { label: "Weekends", dow: "0,6" },
   mon: { label: "Mondays", dow: "1" },
   tue: { label: "Tuesdays", dow: "2" },
   wed: { label: "Wednesdays", dow: "3" },
@@ -30,8 +35,6 @@ const DAYS: Record<string, { label: string; dow: string }> = {
   fri: { label: "Fridays", dow: "5" },
   sat: { label: "Saturdays", dow: "6" },
   sun: { label: "Sundays", dow: "0" },
-  weekdays: { label: "Weekdays", dow: "1-5" },
-  daily: { label: "Every day", dow: "*" },
 };
 // §30 connect-state spinner (the app has no other spinner — waits elsewhere are label swaps).
 // Exported for Onboarding page 2's sign-in button (same states, same look).
