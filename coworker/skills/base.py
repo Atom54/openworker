@@ -26,8 +26,11 @@ class Skill:
 
 
 class SkillLoader:
-    def __init__(self, dirs: list[str | Path]) -> None:
-        self._dirs = [Path(d) for d in dirs]
+    def __init__(self, dirs: Union[list[str | Path], Callable[[], list]]) -> None:
+        # A CALLABLE is re-consulted on every rescan — same idiom as `skill_tools(allowed=…)`:
+        # an engine built before the user repointed the skills folder must still find the
+        # skills at the new location.
+        self._dirs = dirs
         self._skills: dict[str, Skill] = {}
         self.rescan()
 
@@ -36,8 +39,8 @@ class SkillLoader:
         the session's engine was built is still loadable (the catalog line stays static
         until the next session, but an explicitly requested skill must not 404)."""
         self._skills = {}
-        for directory in self._dirs:
-            self._discover(directory)
+        for directory in self._dirs() if callable(self._dirs) else self._dirs:
+            self._discover(Path(directory))
 
     def _discover(self, directory: Path) -> None:
         if not directory.is_dir():

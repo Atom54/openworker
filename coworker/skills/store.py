@@ -35,6 +35,22 @@ _MAX_NAME = 64
 GLOBAL_SCOPE = "global"
 PROJECT_SCOPE = "project"
 
+# Where the global scope lives. Default ``state_dir()/skills``; a user who already keeps a
+# skills folder elsewhere points us at it in Settings ▸ Skills. Module-level (same pattern as
+# pdf_support's fallback mode): the manager seeds it from prefs at startup and on change, so
+# every consumer — the store, the engine's loader, save_skill — reads one live answer.
+_global_dir_override: Optional[Path] = None
+
+
+def set_global_skills_dir(path: Optional[str | Path]) -> None:
+    """Point the global scope at `path` (falsy → back to the default)."""
+    global _global_dir_override
+    _global_dir_override = Path(path).expanduser() if path else None
+
+
+def global_skills_dir() -> Path:
+    return _global_dir_override or (state_dir() / "skills")
+
 
 def validate_name(name: str) -> str:
     """Skill names become folder names — reject anything that could escape the scope dir."""
@@ -84,12 +100,18 @@ class SkillStore:
     """Folder-backed skill CRUD across the global + project scopes."""
 
     def __init__(self, global_dir: Optional[str | Path] = None) -> None:
-        self.global_dir = Path(global_dir) if global_dir else state_dir() / "skills"
+        # No explicit dir → resolved LIVE per access, so changing the folder in Settings
+        # applies to the already-constructed store (the manager builds exactly one).
+        self._global_dir = Path(global_dir) if global_dir else None
         self._settings_path = state_dir() / "skills-settings.json"
         self._staging_dir = state_dir() / "skills-staged"
         self._lock = threading.Lock()
 
     # -- scope dirs ---------------------------------------------------------------
+    @property
+    def global_dir(self) -> Path:
+        return self._global_dir or global_skills_dir()
+
     def project_dir(self, workspace: str | Path) -> Path:
         return Path(workspace).expanduser().resolve() / ".coworker" / "skills"
 

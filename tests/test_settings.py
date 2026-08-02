@@ -174,3 +174,47 @@ def test_ollama_models_gated_on_liveness(tmp_path, monkeypatch):
 
     monkeypatch.setattr(SessionManager, "_ollama_alive", lambda self: True)
     assert "ollama:llama3.3" in manager.get_settings()["models"]
+
+
+def test_skills_dir_setting_persists_and_drives_every_reader(tmp_path, monkeypatch):
+    """The configured folder must be THE global scope everywhere at once: the Settings list,
+    the store's writes, and the engine's loader (incl. one built before the change)."""
+    from fastapi.testclient import TestClient
+
+    from coworker.server.app import create_app
+    from coworker.server.manager import SessionManager
+    from coworker.skills import SkillLoader, global_skills_dir
+    from coworker.agent import _skill_dirs
+
+    state = tmp_path / "state"
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(state))
+    data_dir = tmp_path / "data"
+    manager = SessionManager(data_dir=data_dir)
+    client = TestClient(create_app(manager))
+
+    # defaults to the state dir; an engine's loader is built against it
+    assert client.get("/v1/settings").json()["skills_dir"] == str(state / "skills")
+    loader = SkillLoader(lambda: _skill_dirs(None))  # as build_engine does
+    assert loader.names() == []
+
+    mine = tmp_path / "my skills"
+    (mine / "greet").mkdir(parents=True)
+    (mine / "greet" / "SKILL.md").write_text(
+        "---\nname: greet\ndescription: say hi\n---\nSay hi.\n", encoding="utf-8"
+    )
+    resp = client.post("/v1/settings/skills-dir", json={"path": str(mine)}).json()
+    assert resp["ok"] is True and resp["skills_dir"] == str(mine)
+
+    # listed, loadable from the ALREADY-BUILT loader, and written to
+    assert [r["name"] for r in manager.list_skills()] == ["greet"]
+    loader.rescan()
+    assert loader.names() == ["greet"]
+    manager.skill_store.create(name="fresh", description="d", instructions="do it")
+    assert (mine / "fresh" / "SKILL.md").is_file()
+
+    # persists across a restart; empty resets to the default
+    reborn = SessionManager(data_dir=data_dir)
+    assert reborn.get_settings()["skills_dir"] == str(mine)
+    assert global_skills_dir() == mine
+    assert reborn.set_skills_dir("")["skills_dir"] == str(state / "skills")
+    assert global_skills_dir() == state / "skills"

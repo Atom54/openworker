@@ -284,3 +284,24 @@ describe("SkillsTab — rich-skill disclosure (§6)", () => {
     expect(screen.getAllByTitle("Show folder")).toHaveLength(1);
   });
 });
+
+describe("SkillsTab — skills folder", () => {
+  it("prefills the configured folder, saves it, and re-lists from the new location", async () => {
+    const calls = stubFetch([
+      { match: "/v1/settings/skills-dir", method: "POST", json: { ok: true, skills_dir: "/Users/me/skills" } },
+      { match: "/v1/settings", method: "GET", json: { skills_dir: "/state/skills" } },
+      { match: "/v1/skills", method: "GET", json: { skills: [] } },
+    ]);
+    render(<SkillsTab />);
+    const field = (await screen.findByLabelText("Skills folder")) as HTMLInputElement;
+    expect(field.value).toBe("/state/skills");
+
+    fireEvent.change(field, { target: { value: "/Users/me/skills" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(screen.getByText(/reads skills from here/)).toBeTruthy());
+    const post = calls.find((c) => c.url.includes("/v1/settings/skills-dir"));
+    expect(post?.body).toEqual({ path: "/Users/me/skills" });
+    // the list is re-fetched, so it shows what the NEW folder holds
+    expect(calls.filter((c) => c.url.includes("/v1/skills") && c.method === "GET").length).toBe(2);
+  });
+});

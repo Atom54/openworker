@@ -1420,6 +1420,11 @@ def create_app(manager: SessionManager) -> FastAPI:
     def settings_set_scratch_base(body: dict) -> dict[str, Any]:
         return manager.set_scratch_base(str((body or {}).get("path", "")))
 
+    @app.post("/v1/settings/skills-dir")
+    def settings_set_skills_dir(body: dict) -> dict[str, Any]:
+        # Where global skills are read from and written to ("" resets to the default).
+        return manager.set_skills_dir(str((body or {}).get("path", "")))
+
     @app.post("/v1/settings/nav-layout")
     def settings_set_nav_layout(body: dict) -> dict[str, Any]:
         return manager.set_nav_layout(str((body or {}).get("nav_layout", "")))

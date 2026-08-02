@@ -87,6 +87,8 @@ from ..skills import (
     SkillLoader,
     SkillStore,
     effective_skills,
+    global_skills_dir,
+    set_global_skills_dir,
 )
 
 _SCOPES = {s.value for s in Scope}
@@ -234,6 +236,9 @@ class SessionManager:
         # gates the engine's skill catalog the same way effective_connectors gates connector
         # tools — one resolver feeds the catalog injection, the rail, and the composer popup.
         self.skill_store = SkillStore()
+        # Seed the global skills location from prefs so engines see the user's folder from
+        # the first turn (set_skills_dir keeps it in sync after) — same seeding as PDF above.
+        set_global_skills_dir(self._prefs.get("skills_dir"))
         self.session_skills = SessionSkillStore(base / "session_skills.json")
         # Dead-letter: inbound messages with no destination + background-turn failures, so neither
         # vanishes silently (a debugging/visibility surface, not a redelivery queue).
@@ -1861,6 +1866,8 @@ class SessionManager:
             "context_bar": self.context_bar(),
             "scratch_base": self._prefs.get("scratch_base")
             or self.DEFAULT_SCRATCH_BASE,
+            # Where global skills live — the raw value as entered, else the default folder.
+            "skills_dir": self._prefs.get("skills_dir") or str(global_skills_dir()),
             # Real on-disk secrets location, so the UI shows the OS-native path instead of a
             # hardcoded POSIX one (Windows -> %APPDATA%\coworker, macOS/Linux -> ~/.config).
             "secrets_path": str(self.secrets.path),
@@ -2080,6 +2087,25 @@ class SessionManager:
         except OSError as exc:
             return {"ok": False, "error": str(exc)}
         self._prefs["scratch_base"] = path
+        self._save_prefs()
+        return {"ok": True, **self.get_settings()}
+
+    def set_skills_dir(self, path: str) -> dict[str, Any]:
+        """Point the GLOBAL skill scope at an existing folder of skills (empty → back to the
+        default). It becomes the folder the list shows, the one new/uploaded/worker-authored
+        skills are written to, and the one every conversation loads from — including ones
+        already open (the store and the engines' loaders resolve it live). Skills left in the
+        previous folder stay on disk; they just stop being listed."""
+        path = (path or "").strip()
+        if not path:
+            self._prefs.pop("skills_dir", None)
+        else:
+            try:
+                Path(path).expanduser().mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return {"ok": False, "error": str(exc)}
+            self._prefs["skills_dir"] = path
+        set_global_skills_dir(self._prefs.get("skills_dir"))
         self._save_prefs()
         return {"ok": True, **self.get_settings()}
 

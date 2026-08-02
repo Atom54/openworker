@@ -3,14 +3,17 @@ import { useEffect } from "react";
 import {
   createSkill,
   deleteSkill,
+  getSettings,
   listSkills,
   revealSkill,
+  setSkillsDir,
   stageSkillUpload,
   confirmSkillUpload,
   updateSkill,
   type SkillRow,
   type SkillUploadPreview,
 } from "../api";
+import { chooseFolder } from "../tauri";
 import { Icon } from "./Icon";
 
 // Settings ▸ Skills (SKILLS-SPEC §5/§6) — the management home: the LIST is the page; every
@@ -435,6 +438,72 @@ export function SkillsTab({
         ))}
       </div>
 
+      <SkillsFolderCard onChanged={refresh} />
     </section>
+  );
+}
+
+// Where the skills live on disk (folder-is-truth, §4): a user who already keeps a skills
+// folder points us at it instead of moving anything. It's the folder the list shows AND the
+// one new/imported/worker-authored skills are written to — one location, no split brain.
+function SkillsFolderCard({ onChanged }: { onChanged: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSettings()
+      .then((s) => setDraft(s.skills_dir ?? ""))
+      .catch(() => setDraft(""));
+  }, []);
+
+  const save = async () => {
+    setMsg(null);
+    const res = await setSkillsDir((draft || "").trim());
+    if (res.ok) {
+      setDraft(res.skills_dir ?? draft ?? "");
+      setMsg("Saved — the worker reads skills from here, in every conversation.");
+      onChanged();
+    } else {
+      setMsg(res.error || "Could not use that folder.");
+    }
+  };
+
+  if (draft === null) return null;
+  return (
+    <div className={`${CARD} p-4 mt-4`}>
+      <div className={FIELD_LABEL}>Skills folder</div>
+      <div className="flex items-center gap-2 mt-2.5">
+        <input
+          className={INPUT}
+          type="text"
+          aria-label="Skills folder"
+          placeholder="~/.coworker/skills"
+          value={draft}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <button
+          className={BTN_BORDERED}
+          onClick={async () => {
+            const picked = await chooseFolder();
+            if (picked) setDraft(picked);
+          }}
+          title="Pick a folder"
+        >
+          Browse
+        </button>
+        <button className={BTN_ACCENT} onClick={save}>
+          Save
+        </button>
+      </div>
+      <div className="text-[12px] text-muted mt-2 leading-relaxed">
+        Every folder in here with a SKILL.md is a skill. New and imported skills are saved here
+        too. Skills in the previous folder stay on disk — they just stop being listed. Leave it
+        empty to go back to the default folder.
+      </div>
+      {msg && <div className="text-[12.5px] text-muted mt-2.5">{msg}</div>}
+    </div>
   );
 }

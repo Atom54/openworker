@@ -30,7 +30,13 @@ from .roots import RootDir, normalize_roots, render_context
 from .providers import ProviderClient, ProviderRouter
 from .overrides import RiskOverrideStore
 from .secrets import SecretStore, state_dir
-from .skills import SkillLoader, save_skill_tool, skill_catalog_text, skill_tools
+from .skills import (
+    SkillLoader,
+    global_skills_dir,
+    save_skill_tool,
+    skill_catalog_text,
+    skill_tools,
+)
 from .tools import ToolRegistry
 from .tools.ask import ask_user_tool
 from .tools.directories import request_directory_tool
@@ -132,7 +138,7 @@ def _loaded_skill_names(messages: list[dict[str, Any]]) -> set[str]:
 
 
 def _skill_dirs(workspace: Optional[Path]) -> list[Path]:
-    dirs = [state_dir() / "skills"]
+    dirs = [global_skills_dir()]  # Settings ▸ Skills can repoint this
     if workspace is not None:
         dirs.append(workspace / ".coworker" / "skills")
     return dirs
@@ -293,7 +299,7 @@ def build_engine(
         if block:
             instructions = f"{instructions}\n\n{block}"
 
-    skill_loader = SkillLoader(_skill_dirs(ws))
+    skill_loader = SkillLoader(lambda: _skill_dirs(ws))
     # Per-session effective menu (SKILLS-SPEC §3). The manager passes a CALLABLE so
     # load_skill consults the LIVE state per call (a Settings disable applies to running
     # sessions; a skill created after this build is still loadable). The catalog itself

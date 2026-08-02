@@ -687,6 +687,8 @@ export interface ModelSettings {
   onboarded: boolean;
   surfaces: SurfaceVisibility;
   scratch_base: string;
+  // Folder the global skills are read from / written to. Optional: older backends omit it.
+  skills_dir?: string;
   secrets_path: string;  // OS-native on-disk location the server reports (not hardcoded)
   // Sidebar layout preference (§7): "flat" = the persona accordions / today's list; "grouped" =
   // bounded per-persona cards. Defaults to "flat" (absent → flat) so the GUI is robust to an older
@@ -791,6 +793,18 @@ export async function setScratchBase(
   path: string,
 ): Promise<{ ok: boolean; error?: string; scratch_base?: string }> {
   const res = await fetch(`${httpBase()}/v1/settings/scratch-base`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  return res.json();
+}
+
+/** Point the global skill scope at a folder ("" resets it to the default location). */
+export async function setSkillsDir(
+  path: string,
+): Promise<{ ok: boolean; error?: string; skills_dir?: string }> {
+  const res = await fetch(`${httpBase()}/v1/settings/skills-dir`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
