@@ -478,10 +478,19 @@ def ensure_fresh_connector_token(
     profile_key: Optional[str] = None,
     leeway: int = 120,
 ) -> None:
-    """Refresh-on-expiry hook for connector tools: if this is a managed profile
-    about to expire, renew it in place. No-op for manual profiles."""
+    """Refresh-on-expiry hook for connector tools: if this profile is about to
+    expire, renew it in place. No-op for manual (pasted-token) profiles.
+
+    Two renewal owners, one funnel so every call site gets both: broker-managed
+    profiles go through the cloud, locally-granted Google ones (google_oauth,
+    the user's own OAuth client) go straight to Google."""
     key = profile_key or f"{connector}:default"
     profile = secrets.get(key) or {}
+    if profile.get("local_oauth"):
+        from .connectors import google_oauth
+
+        google_oauth.ensure_fresh(secrets, key, leeway=leeway)
+        return
     if not profile.get("managed"):
         return
     expires = float(profile.get("expires") or 0)

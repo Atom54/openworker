@@ -1243,6 +1243,15 @@ export async function mockApi(page: import("@playwright/test").Page) {
         ],
       });
     if (p.endsWith("/v1/cloud/status")) return json({ ...CLOUD_STATE });
+    // Local one-click Google: no OAuth client set up by default, so the Google
+    // pages show their setup block. google-paused.spec.ts overrides per test.
+    if (p.endsWith("/v1/google/oauth-client"))
+      return json({
+        configured: false,
+        client_id: "",
+        from_env: false,
+        redirect_uri: "http://127.0.0.1:8765/google/oauth/callback",
+      });
     if (p.endsWith("/v1/cloud/login") && m === "POST") {
       Object.assign(CLOUD_STATE, { signed_in: true, account: "rohit@openworker.com", user_id: "usr_e2e" });
       return json({ ok: true });

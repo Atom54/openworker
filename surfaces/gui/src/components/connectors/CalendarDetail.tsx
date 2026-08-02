@@ -7,16 +7,20 @@ import {
 } from "../../api";
 import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import type { DetailProps } from "./ConnectorsSection";
+import { GoogleOneClickSetup } from "./GoogleOneClick";
 import { ToolsDisclosure } from "./ToolsDisclosure";
 import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "./ui";
 
 // The Google Calendar detail page: connected accounts (multi-account, Default
 // badge, per-account disconnect) — Gmail's page minus the privacy filters.
-// Adding an account launches managed OAuth DIRECTLY (one connect mode, no modal).
+// Adding an account launches OAuth DIRECTLY (one connect mode, no modal): local
+// with the user's own Google client, the broker's otherwise. Same setup block as
+// Gmail's page — one client covers every Google connector.
 
 export function CalendarDetail({ c, cloud, slack: _slack, onChanged }: DetailProps) {
   const [busy, setBusy] = useState(false);
   const accounts = (c.accounts ?? []) as GmailAccount[]; // email-keyed (pre-generic-layer shape)
+  const canAdd = !c.managed_paused && (c.google_client_ready || !!cloud?.signed_in);
 
   const addAccount = async () => {
     setBusy(true);
@@ -46,19 +50,23 @@ export function CalendarDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
           </div>
         </div>
         <button
-          className={PILL_ACCENT + (c.managed_paused ? " opacity-50" : "")}
+          className={PILL_ACCENT + (canAdd ? "" : " opacity-50")}
           data-testid="add-account-btn"
           onClick={addAccount}
-          disabled={busy || !cloud?.signed_in || c.managed_paused}
+          disabled={busy || !canAdd}
           title={
             c.managed_paused
-              ? "One-click Google sign-in is coming soon"
-              : cloud?.signed_in
+              ? "Set up one-click Google sign-in below"
+              : canAdd
                 ? ""
                 : "Sign in to OpenWorker Cloud first"
           }
         >
-          {c.managed_paused ? "＋ Add account · Coming soon" : busy ? "Check your browser…" : "＋ Add account"}
+          {c.managed_paused
+            ? "＋ Add account · Set up below"
+            : busy
+              ? "Check your browser…"
+              : "＋ Add account"}
         </button>
       </div>
 
@@ -66,10 +74,12 @@ export function CalendarDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
         <div className={GRP}>
           <div className={ROW + " text-[12.5px] text-muted"}>
             Sign in with Google — each account stays separate, agents say which one they use.
-            {cloud?.signed_in ? "" : " Requires cloud sign-in."}
+            {c.google_client_ready || cloud?.signed_in ? "" : " Set up one-click below."}
           </div>
         </div>
       )}
+
+      <GoogleOneClickSetup onChanged={onChanged} />
 
       {accounts.length > 0 && (
         <>

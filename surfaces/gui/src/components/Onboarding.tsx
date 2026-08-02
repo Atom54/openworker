@@ -222,10 +222,10 @@ export function Onboarding({ onDone }: { onDone: (next?: "work" | "gallery" | "a
                     Gmail &amp; Google Calendar
                   </span>
                   <span className="block text-[12px] text-faint truncate">
-                    Coming soon — pending Google&rsquo;s app verification.
+                    Set up in Connectors ▸ Gmail — one click, then it stays connected.
                   </span>
                 </span>
-                {cloud?.signed_in && <span className="text-[11.5px] text-faint shrink-0">Coming soon</span>}
+                {cloud?.signed_in && <span className="text-[11.5px] text-faint shrink-0">In Connectors</span>}
               </div>
             </div>
 

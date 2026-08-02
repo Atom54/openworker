@@ -135,8 +135,21 @@ def test_connector_list_accounts_branch_and_full_disconnect(acme, secrets):
     entry = next(c for c in connector_list(secrets) if c["name"] == "acmeapp")
     assert entry["connected"] and entry["enabled"]
     assert entry["accounts"] == [
-        {"account_id": "p1", "name": "Proj One", "default": True, "managed": False},
-        {"account_id": "p2", "name": "p2", "default": False, "managed": True},
+        # needs_reauth: pasted tokens carry no `expires`, so it never trips for them.
+        {
+            "account_id": "p1",
+            "name": "Proj One",
+            "default": True,
+            "managed": False,
+            "needs_reauth": False,
+        },
+        {
+            "account_id": "p2",
+            "name": "p2",
+            "default": False,
+            "managed": True,
+            "needs_reauth": False,
+        },
     ]
     assert entry["account"] == "Proj One"  # default account's display name
 

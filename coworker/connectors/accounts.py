@@ -172,6 +172,8 @@ def disconnect_account(
 def account_rows(secrets: SecretStore, connector: str) -> list[dict[str, Any]]:
     """connector_list's `accounts` field: id, display name, default/managed
     flags. Display name = the identity captured at connect (else the id)."""
+    from time import time
+
     default = default_account(secrets, connector)
     return [
         {
@@ -179,6 +181,14 @@ def account_rows(secrets: SecretStore, connector: str) -> list[dict[str, Any]]:
             "name": str(profile.get("account") or account_id),
             "default": account_id == default,
             "managed": bool(profile.get("managed")),
+            # Same rule as the gmail/gcal rows: expired with no way to renew
+            # silently → the GUI offers Reauthorize. Only OAuth profiles carry
+            # `expires`, so pasted tokens never trip it.
+            "needs_reauth": bool(
+                float(profile.get("expires") or 0)
+                and float(profile["expires"]) < time()
+                and not profile.get("refresh_token")
+            ),
         }
         for account_id, profile in list_accounts(secrets, connector)
     ]

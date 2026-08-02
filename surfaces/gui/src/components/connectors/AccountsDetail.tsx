@@ -8,8 +8,9 @@ import {
 import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import { ConnectSetup } from "../ManageTabs";
 import type { DetailProps } from "./ConnectorsSection";
+import { GoogleOneClickSetup } from "./GoogleOneClick";
 import { ToolsDisclosure } from "./ToolsDisclosure";
-import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, XBTN } from "./ui";
+import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "./ui";
 
 // The generic detail page for multi-account connectors on the accounts layer
 // (Notion, Attio, PostHog, Mixpanel, Amplitude, Apollo, Hunter — batch 2).
@@ -22,7 +23,11 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
   const [busy, setBusy] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const accounts = (c.accounts ?? []) as AccountRow[];
-  const canOneClick = c.managed && !!cloud?.signed_in;
+  // Google connectors (Drive here) carry google_client_ready: their one-click can
+  // run locally off the user's own OAuth client, with no cloud session at all.
+  const isGoogle = c.google_client_ready !== undefined;
+  const canOneClick =
+    c.managed && !c.managed_paused && (c.google_client_ready || !!cloud?.signed_in);
 
   const addManaged = async () => {
     setBusy(true);
@@ -57,9 +62,11 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
           onClick={() => (canOneClick ? addManaged() : setShowManual((v) => !v))}
           disabled={busy}
           title={
-            c.managed && !cloud?.signed_in
-              ? "Sign in to OpenWorker Cloud for one-click — or add a token below"
-              : ""
+            !c.managed || canOneClick
+              ? ""
+              : isGoogle
+                ? "Set up one-click Google sign-in below — or add a token below"
+                : "Sign in to OpenWorker Cloud for one-click — or add a token below"
           }
         >
           {busy ? "Check your browser…" : "＋ Add account"}
@@ -76,6 +83,8 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
           </div>
         </>
       )}
+
+      {isGoogle && <GoogleOneClickSetup onChanged={onChanged} />}
 
       {(showManual || !c.connected) && (
         <>
@@ -126,6 +135,7 @@ function Row({
           </span>
         )}
         {a.default && <span className={TAG_ACCENT}>Default</span>}
+        {a.needs_reauth && <span className={TAG_WARN}>⚠ Sign in again</span>}
       </span>
       {!a.default && (
         <button

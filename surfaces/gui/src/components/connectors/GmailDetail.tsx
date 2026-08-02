@@ -8,19 +8,24 @@ import {
 } from "../../api";
 import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import type { DetailProps } from "./ConnectorsSection";
+import { GoogleOneClickSetup } from "./GoogleOneClick";
 import { ToolsDisclosure } from "./ToolsDisclosure";
 import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "./ui";
 
 // The Gmail detail page (UX-DECISIONS §21): connected mailboxes (multi-account,
 // Default badge, per-account disconnect) + "Never show agents" privacy filters.
-// Adding an account launches managed OAuth DIRECTLY — Gmail has one connect mode,
-// so no modal (the pill-modal is only for ≥2-mode connectors like Slack).
+// Adding an account launches OAuth DIRECTLY — Gmail has one connect mode, so no
+// modal (the pill-modal is only for ≥2-mode connectors like Slack). That OAuth is
+// LOCAL once the user's own Google client is set up below (no cloud sign-in, and
+// the mailbox stays connected), else the broker's — parked until CASA clears.
 
 const LABEL = "text-[12.5px] text-muted w-24 shrink-0";
 
 export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps) {
   const [busy, setBusy] = useState(false);
   const accounts = (c.accounts ?? []) as GmailAccount[]; // email-keyed (pre-generic-layer shape)
+  // Local one-click needs no cloud session; the broker path still does.
+  const canAdd = !c.managed_paused && (c.google_client_ready || !!cloud?.signed_in);
 
   const addAccount = async () => {
     setBusy(true);
@@ -48,19 +53,23 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
           </div>
         </div>
         <button
-          className={PILL_ACCENT + (c.managed_paused ? " opacity-50" : "")}
+          className={PILL_ACCENT + (canAdd ? "" : " opacity-50")}
           data-testid="add-account-btn"
           onClick={addAccount}
-          disabled={busy || !cloud?.signed_in || c.managed_paused}
+          disabled={busy || !canAdd}
           title={
             c.managed_paused
-              ? "One-click Google sign-in is coming soon"
-              : cloud?.signed_in
+              ? "Set up one-click Google sign-in below"
+              : canAdd
                 ? ""
                 : "Sign in to OpenWorker Cloud first"
           }
         >
-          {c.managed_paused ? "＋ Add account · Coming soon" : busy ? "Check your browser…" : "＋ Add account"}
+          {c.managed_paused
+            ? "＋ Add account · Set up below"
+            : busy
+              ? "Check your browser…"
+              : "＋ Add account"}
         </button>
       </div>
 
@@ -68,10 +77,12 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
         <div className={GRP}>
           <div className={ROW + " text-[12.5px] text-muted"}>
             Sign in with Google — each mailbox stays separate, agents say which one they use.
-            {cloud?.signed_in ? "" : " Requires cloud sign-in."}
+            {c.google_client_ready || cloud?.signed_in ? "" : " Set up one-click below."}
           </div>
         </div>
       )}
+
+      <GoogleOneClickSetup onChanged={onChanged} />
 
       {accounts.length > 0 && (
         <>

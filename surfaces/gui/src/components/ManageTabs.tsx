@@ -28,6 +28,7 @@ import {
   type ProviderInfo,
 } from "../api";
 import { CloudSignInInline, CloudStatusPending } from "./connectors/CloudSignIn";
+import { GoogleOneClickSetup } from "./connectors/GoogleOneClick";
 import { ModelChecklist } from "./ModelChecklist";
 import { ProviderCards, ProviderForm, useProviderSetup } from "../providers/ProviderSetup";
 import { Toggle } from "./Toggle";
@@ -825,20 +826,25 @@ export function ConnectSetup({
       {c.managed && !c.mcp && !manualOnly && (
         <div className="space-y-2" data-testid="managed-connect">
           {c.managed_paused ? (
-            // One-click temporarily off (e.g. Google pending CASA verification):
-            // a visibly-parked button, and the manual path below stays fully live.
+            // Broker one-click parked (Google pending CASA verification). For the
+            // Google trio that's fixable right here: point the flow at your own
+            // OAuth client and it runs locally. The manual path stays fully live.
             <>
               <button className={BTN_ACCENT + " opacity-50"} disabled data-testid="managed-coming-soon">
                 {`Connect ${c.title} with one click`}
                 <span className="ml-2 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-white/25">
-                  Coming soon
+                  Needs setup
                 </span>
               </button>
-              <div className="text-[11.5px] text-faint">
-                One-click sign-in is coming soon — connect manually below for now:
-              </div>
+              {c.google_client_ready === undefined ? (
+                <div className="text-[11.5px] text-faint">
+                  One-click sign-in is coming soon — connect manually below for now:
+                </div>
+              ) : (
+                <GoogleOneClickSetup onChanged={onConnected} compact />
+              )}
             </>
-          ) : cloud?.signed_in ? (
+          ) : c.google_client_ready || cloud?.signed_in ? (
             <button className={BTN_ACCENT} onClick={oneClick} disabled={waiting}>
               {waiting ? "Check your browser…" : `Connect ${c.title} with one click`}
             </button>
@@ -851,7 +857,7 @@ export function ConnectSetup({
             // possibly-signed-in user (FB-013); the host keeps polling.
             <CloudStatusPending />
           )}
-          {!c.managed_paused && cloud?.signed_in && (
+          {!c.managed_paused && (c.google_client_ready || cloud?.signed_in) && (
             <div className="text-[11.5px] text-faint">or connect manually:</div>
           )}
         </div>

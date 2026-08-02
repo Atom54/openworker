@@ -106,13 +106,14 @@ test("tools page: sign-in morphs the page into the connector gallery; a card con
   await expect(page.getByTestId("ob-step-tools")).toBeVisible();
 
   // Pre-sign-in (§41): the benefit rows are already there (no Connect buttons yet),
-  // the combined Google row says Coming soon, the band asks for sign-in, and the one
+  // the combined Google row points at Connectors (one-click Google is set up there,
+  // off the user's own OAuth client), the band asks for sign-in, and the one
   // footer button is the quiet "Continue without sign-in".
   await expect(page.getByText("Chat can only advise")).toBeVisible();
   await expect(page.getByTestId("ob-tool-outlook")).toContainText("Stay on top of email");
   await expect(page.getByTestId("ob-tool-outlook").getByRole("button")).toHaveCount(0);
   await expect(page.getByTestId("ob-tool-attio")).toContainText("Track every relationship");
-  await expect(page.getByTestId("ob-tool-google-soon")).toContainText("Coming soon");
+  await expect(page.getByTestId("ob-tool-google-soon")).toContainText("Connectors");
   await expect(page.getByText("Sign in for one-click connections")).toBeVisible();
   await expect(page.getByTestId("ob-tools-skip")).toContainText("Continue without sign-in");
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..secrets import SecretStore
+from . import google_oauth
 from .catalog_copy import about_for, access_for
 from .descriptors import get_descriptor, list_descriptors
 from .tool_defs import patch_tool_settings, tool_dicts
@@ -106,6 +107,14 @@ def connector_list(secrets: SecretStore) -> list[dict[str, Any]]:
             # "relay" for the managed cloud path; empty for manual/token connect.
             "mode": profile.get("mode") or "",
         }
+        if d.name in google_oauth.CONNECTORS:
+            # One-click Google runs LOCALLY off the user's own OAuth client
+            # (google_oauth), so the broker's CASA pause only parks the button
+            # while no client is set up — configuring one lights up all three
+            # Google connectors at once, signed in to the cloud or not.
+            ready = google_oauth.configured(secrets)
+            entry["google_client_ready"] = ready
+            entry["managed_paused"] = d.managed_paused and not ready
         if d.name == "slack":
             # Managed relay is multi-workspace: each `slack:team:*` profile is one
             # connected workspace with its OWN allow-list (ids are workspace-scoped).

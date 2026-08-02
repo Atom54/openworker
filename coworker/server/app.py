@@ -187,6 +187,7 @@ def create_app(manager: SessionManager) -> FastAPI:
         "/auth/callback",
         "/mcp/oauth/callback",
         "/oauth/callback",
+        "/google/oauth/callback",
     }
 
     def _request_authenticated(request: Request) -> bool:
@@ -1114,9 +1115,20 @@ def create_app(manager: SessionManager) -> FastAPI:
 
         from .. import cloud
         from ..config import load_config
+        from ..connectors import google_oauth
         from ..connectors.descriptors import get_descriptor
 
         d = get_descriptor(name)
+        if name in google_oauth.CONNECTORS and google_oauth.configured(manager.secrets):
+            # One-click Google is LOCAL when the user's own OAuth client is set
+            # up: no broker, no cloud sign-in, and the grant it returns keeps
+            # refreshing itself (google_oauth's module docstring says for how long).
+            out = await asyncio.to_thread(
+                lambda: google_oauth.begin(manager.secrets, name)
+            )
+            if out.get("ok"):
+                webbrowser.open(out["authorize_url"])
+            return out
         if d is not None and d.managed_paused:
             # GUI shows the Coming-soon state; this guard covers stale GUIs/API callers.
             return {
@@ -1133,6 +1145,73 @@ def create_app(manager: SessionManager) -> FastAPI:
         if out.get("ok"):
             webbrowser.open(out["authorize_url"])
         return out
+
+    @app.get("/v1/google/oauth-client")
+    def google_client_get() -> dict[str, Any]:
+        """Whether local one-click Google is set up (and with which client id —
+        never the secret)."""
+        from ..connectors import google_oauth
+
+        return google_oauth.client_status(manager.secrets)
+
+    @app.post("/v1/google/oauth-client")
+    def google_client_set(body: dict) -> dict[str, Any]:
+        from ..connectors import google_oauth
+
+        return google_oauth.set_client(
+            manager.secrets,
+            str((body or {}).get("client_id", "")),
+            str((body or {}).get("client_secret", "")),
+        )
+
+    @app.delete("/v1/google/oauth-client")
+    def google_client_clear() -> dict[str, Any]:
+        from ..connectors import google_oauth
+
+        return google_oauth.clear_client(manager.secrets)
+
+    @app.get("/google/oauth/callback")
+    async def google_oauth_callback(
+        code: str = "", state: str = "", error: str = ""
+    ) -> Any:
+        # Loopback landing for local one-click Google (connectors/google_oauth.py).
+        # Browser-facing: same branded card as the managed/MCP callbacks.
+        from fastapi.responses import HTMLResponse
+
+        from ..connectors import google_oauth
+
+        if error or not code:
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed",
+                    _CONNECT_FAILED_DETAIL,
+                    ok=False,
+                    error=error or "google returned no authorization code",
+                ),
+                status_code=400,
+            )
+        result = await asyncio.to_thread(
+            lambda: google_oauth.complete(manager.secrets, code, state)
+        )
+        if not result.get("ok"):
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed",
+                    _CONNECT_FAILED_DETAIL,
+                    ok=False,
+                    error=result.get("error", ""),
+                ),
+                status_code=400,
+            )
+        connector = str(result.get("connector") or "")
+        return HTMLResponse(
+            _browser_page(
+                f"{_connector_title(connector)} connected",
+                f"Signed in as {result.get('account') or 'your Google account'}. "
+                "You can close this tab and return to OpenWorker.",
+                connector=connector,
+            )
+        )
 
     @app.post("/oauth/callback")
     async def managed_oauth_callback(request: Request) -> Any:

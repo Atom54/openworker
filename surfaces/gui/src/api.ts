@@ -423,6 +423,7 @@ export interface AccountRow {
   name: string; // display identity captured at connect (workspace name, email, …)
   default: boolean;
   managed: boolean;
+  needs_reauth?: boolean; // OAuth grant expired with nothing left to renew it
 }
 
 export interface Connector {
@@ -457,6 +458,7 @@ export interface Connector {
   tools: ConnectorTool[];
   managed: boolean; // one-click managed OAuth available (needs cloud sign-in)
   managed_paused?: boolean; // one-click temporarily off (e.g. Google CASA pending) — badge "Coming soon"
+  google_client_ready?: boolean; // Google trio: local one-click is set up (own OAuth client, no cloud sign-in)
   managed_profile: boolean; // current profile came from managed OAuth (vs manual paste)
   mode?: string; // "relay" for the managed cloud path; "" for manual/token connect
   workspaces?: SlackWorkspace[]; // Slack only: connected workspaces (managed relay)
@@ -557,6 +559,41 @@ export async function connectManaged(
 /** One-click connect for an MCP-backed connector (monday, asana, jira): the sidecar
  * opens the vendor's sign-in in the browser (local OAuth, no cloud account needed);
  * poll getConnectors until the card flips to connected. */
+// --- local one-click Google (the user's own Google Cloud OAuth client) -------
+// Set this up once and Gmail, Calendar and Drive all gain one-click sign-in
+// that keeps itself refreshed — no cloud sign-in, no broker in the path.
+
+export interface GoogleClientStatus {
+  configured: boolean;
+  client_id: string; // never the secret
+  from_env: boolean; // supplied by COWORKER_GOOGLE_CLIENT_ID (read-only in the GUI)
+  redirect_uri: string;
+}
+
+export async function getGoogleClient(): Promise<GoogleClientStatus> {
+  const res = await fetch(`${httpBase()}/v1/google/oauth-client`);
+  return res.json();
+}
+
+export async function setGoogleClient(
+  client_id: string,
+  client_secret: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/google/oauth-client`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id, client_secret }),
+  });
+  return res.json();
+}
+
+export async function clearGoogleClient(): Promise<{ ok: boolean }> {
+  const res = await fetch(`${httpBase()}/v1/google/oauth-client`, {
+    method: "DELETE",
+  });
+  return res.json();
+}
+
 export async function connectMcpBacked(name: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(
     `${httpBase()}/v1/connectors/${encodeURIComponent(name)}/mcp-connect`,

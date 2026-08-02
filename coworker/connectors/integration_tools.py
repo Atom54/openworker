@@ -76,9 +76,10 @@ def _profile(
     secrets: SecretStore, name: str, *keys: str
 ) -> tuple[Optional[dict[str, Any]], Optional[dict[str, str]]]:
     profile = secrets.get(f"{name}:default") or {}
-    if profile.get("managed"):
-        # Managed-OAuth profiles renew through the cloud broker just before
-        # expiry; manual token profiles are never touched (no-op inside).
+    if profile.get("managed") or profile.get("local_oauth"):
+        # OAuth profiles renew just before expiry — through the cloud broker
+        # (managed) or straight against the provider (local one-click Google);
+        # manual token profiles are never touched (no-op inside).
         from ..cloud import ensure_fresh_connector_token
         from ..config import load_config
 
@@ -106,7 +107,7 @@ def _account_profile(
             else f"{connector} is not connected"
         )
         return "", None, {"error": hint}
-    if profile.get("managed"):
+    if profile.get("managed") or profile.get("local_oauth"):
         from ..cloud import ensure_fresh_connector_token
         from ..config import load_config
 
@@ -151,7 +152,7 @@ def _gmail_profile(
             else "gmail is not connected"
         )
         return "", None, {"error": hint}
-    if profile.get("managed"):
+    if profile.get("managed") or profile.get("local_oauth"):
         from ..cloud import ensure_fresh_connector_token
         from ..config import load_config
 
@@ -178,7 +179,7 @@ def _gcal_profile(
             else "google calendar is not connected"
         )
         return "", None, {"error": hint}
-    if profile.get("managed"):
+    if profile.get("managed") or profile.get("local_oauth"):
         from ..cloud import ensure_fresh_connector_token
         from ..config import load_config
 
