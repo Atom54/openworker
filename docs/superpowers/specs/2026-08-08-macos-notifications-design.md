@@ -31,16 +31,26 @@ Four categories, each independently switchable:
 
 Clicking a notification focuses the window and opens the originating session.
 
-## Spike results (macOS 26.6, Darwin 25.6, rustc 1.96)
+## macOS findings (macOS 26.6, Darwin 25.6, rustc 1.96)
 
-Measured, not assumed:
+Measured on a real bundle, not assumed. Three separate locks had to be opened before a
+banner appeared; each one failed silently or misleadingly on its own.
 
 - `tauri-plugin-notification`'s desktop path cannot report clicks. `desktop.rs` is `spawn(async move { let _ = notification.show(); })` — fire and forget. `onAction` is Android/iOS only. **The plugin is therefore not used.**
-- `notify-rust` 4.18 → `mac-notification-sys` 0.6 → `NSUserNotificationCenter` still delivers on macOS 26.6. Confirmed against `~/Library/Group Containers/group.com.apple.usernoted/db2/db`: records attributed to `com.openworker.desktop`.
-- `NotificationHandle::wait_for_response()` blocks for real and reports the click: `RESPONSE -> Default` after 1949 ms.
-- **A notification with no action button returns `Closed(Expired)` in ~175 ms.** The `.action("default", …)` call is what arms the response channel — it is load-bearing, not decoration.
-- `set_application(<bundle id>)` must name a bundle registered with LaunchServices. It fails (`CouldNotSet`) for an ad-hoc bundle in `/tmp`, and then notifications are attributed to the parent process instead.
+- **The default backend is a dead end.** `notify-rust`'s macOS default is `mac-notification-sys` → `NSUserNotificationCenter` (deprecated). On macOS 26.6 it *accepts* notifications — `show()` returns `Ok`, records land in `~/Library/Group Containers/group.com.apple.usernoted/db2/db` attributed to `com.openworker.desktop` — and **no banner is ever drawn**. A spike that only checks the database reads as success; it is not. The fix is the `preview-macos-un` feature, which swaps in `UNUserNotificationCenter`.
+- **The UN backend needs the main run loop idle.** Off the main thread it proceeds only when `CFRunLoop::main().is_waiting()`, and the notification is triggered by the very JS event the main thread is still processing — so the first attempt loses that race with `Mainthread not running`. Hence the retry loop in `notify`.
+- **The bundle's code signature identifier must match its `CFBundleIdentifier`.** `npm run tauri build` produces an ad-hoc, linker-signed bundle whose identifier is `openworker_desktop-<hash>`; `UNUserNotificationCenter` answers every request with `macOS rejected the notification request`. Re-signing with `codesign --force --deep --sign - --identifier com.openworker.desktop` makes it accept. **This affects shipped builds, not just local ones** — `/Applications/OpenWorker.app` has the same mismatch, so notifications cannot work there until the signing config is fixed. See "Open issue" below.
+- A notification with no action button returns `Closed(Expired)` in ~175 ms. `.action("default", …)` is what arms the response channel — load-bearing, not decoration.
 - The closure passed to `wait_for_response` needs an explicit `&NotificationResponse` annotation; inference pins it to one lifetime and fails the higher-ranked bound.
+- `record.presented` in the usernoted database is **not** a reliable "was it shown" flag: Slack notifications the user demonstrably sees are also stored with `presented=0`. Only a human confirming the banner counts.
+
+## Open issue: signing
+
+The feature works, but only on a bundle whose signature identifier matches the bundle id.
+`tauri.conf.json` sets no `bundle.macOS.signingIdentity`, so builds are ad-hoc/linker-signed
+and notifications are rejected. This needs a decision: a Developer ID certificate (also
+required for notarised distribution), or a post-build ad-hoc re-sign with an explicit
+`--identifier`. Until then a freshly built app will not notify.
 
 ## Architecture
 
@@ -94,7 +104,7 @@ Click return: the shell emits a Tauri event, the frontend listens with the exist
 
 ### 4. Rust shell
 
-`notify-rust = "4"` in `Cargo.toml`. No plugin, no capability entry, no JS package.
+`notify-rust = { version = "4", features = ["preview-macos-un"] }` in `Cargo.toml`. No plugin, no capability entry, no JS package.
 
 A `notify` command spawns a `std::thread`, builds the notification **with a main action button**, shows it, then blocks on `wait_for_response`. On `Default` or an action, it emits `ow://notification-click` carrying `{session_id, workspace, agent}`; the frontend focuses the window and opens the session.
 

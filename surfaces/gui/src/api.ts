@@ -763,6 +763,11 @@ export interface ModelSettings {
   };
 }
 
+// Fired after a notification-prefs change so the app picks it up AT ONCE. Without this the
+// new prefs only landed when the user navigated out of Settings, and a freshly enabled
+// notification silently did nothing until then.
+export const NOTIFICATIONS_CHANGED = "coworker:notifications-changed";
+
 /** Persist a partial notification-prefs change; the server merges, so one switch can't
  * clear the others. */
 export async function setNotificationSettings(
@@ -773,7 +778,13 @@ export async function setNotificationSettings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
-  return res.json();
+  const out = await res.json();
+  if (out?.notifications) {
+    window.dispatchEvent(
+      new CustomEvent(NOTIFICATIONS_CHANGED, { detail: out.notifications }),
+    );
+  }
+  return out;
 }
 
 export interface PdfSettings {

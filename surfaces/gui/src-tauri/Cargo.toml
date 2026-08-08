@@ -21,7 +21,12 @@ tauri-plugin-updater = "2"
 # NOT tauri-plugin-notification: its desktop path is fire-and-forget (`spawn(async {
 # notification.show() })`) and `onAction` is Android/iOS only, so a click can never come
 # back. notify-rust is the layer that plugin sits on, and it does report the click.
-notify-rust = "4"
+# `preview-macos-un` swaps the default NSUserNotificationCenter backend for
+# UNUserNotificationCenter. The deprecated one still ACCEPTS notifications on macOS 26 —
+# they land in the Notification Center database — but files every one with presented=0 and
+# never draws a banner, because it never asks for authorization and so the app never gets a
+# notification entry in System Settings. Measured, not assumed.
+notify-rust = { version = "4", features = ["preview-macos-un"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }

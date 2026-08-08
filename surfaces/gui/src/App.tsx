@@ -10,6 +10,7 @@ import {
   announceAutomationsChanged,
   announceMemoryChanged,
   connectEvents,
+  NOTIFICATIONS_CHANGED,
   deleteMemory,
   updateMemory,
   getSettings,
@@ -1024,6 +1025,16 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [runToast]);
 
+  // Settings ▸ Notifications applies immediately, without waiting for the user to leave
+  // the Settings surface (which is when loadSettings would otherwise re-read them).
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const next = (e as CustomEvent<NotificationPrefs>).detail;
+      if (next) setNotificationPrefs(next);
+    };
+    window.addEventListener(NOTIFICATIONS_CHANGED, onChange);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, onChange);
+  }, []);
   // Clicking a notification lands here: the shell has already raised the window.
   const selectSessionRef = useRef<typeof selectSession | null>(null);
   useEffect(() => {

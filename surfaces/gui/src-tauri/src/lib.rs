@@ -506,14 +506,39 @@ struct NotificationTarget {
 // If that ever stops being true, batch them onto one worker thread.
 #[tauri::command]
 fn notify(app: tauri::AppHandle, title: String, body: String, target: NotificationTarget) {
+    eprintln!("[notify] invoked: {title:?} -> session {:?}", target.session_id);
     std::thread::spawn(move || {
-        let handle = notify_rust::Notification::new()
-            .summary(&title)
-            .body(&body)
-            // Load-bearing, see above: no action button means no response channel.
-            .action("default", "Ouvrir")
-            .show();
-        let Ok(handle) = handle else { return };
+        // UNUserNotificationCenter delivers on the main run loop. Off the main thread the
+        // backend only proceeds when that loop is IDLE (`CFRunLoop::main().is_waiting()`),
+        // and we arrive here while the main thread is still processing the very invoke that
+        // got us here — so a first attempt reliably loses the race with "Mainthread not
+        // running". Give the loop a beat to settle, then retry a few times.
+        let mut attempt = 0;
+        let handle = loop {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            match notify_rust::Notification::new()
+                .summary(&title)
+                .body(&body)
+                // Load-bearing: no action button means no response channel.
+                .action("default", "Ouvrir")
+                .show()
+            {
+                Ok(h) => {
+                    eprintln!("[notify] show() ok, awaiting verdict");
+                    break h;
+                }
+                // A notification that never reaches the user must not fail silently — that
+                // is indistinguishable from "nothing happened" and impossible to support.
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= 8 {
+                        eprintln!("[notify] gave up after {attempt} attempts: {e}");
+                        return;
+                    }
+                    eprintln!("[notify] attempt {attempt} failed ({e}), retrying");
+                }
+            }
+        };
         // The annotation is required: `wait_for_response` takes a higher-ranked FnOnce and
         // inference would otherwise pin the closure to a single concrete lifetime.
         let _ = handle.wait_for_response(|resp: &notify_rust::NotificationResponse| {
@@ -681,7 +706,10 @@ pub fn run() {
             // an unattributed notification is still better than none.
             #[cfg(target_os = "macos")]
             {
-                let _ = notify_rust::set_application(&app.config().identifier);
+                match notify_rust::set_application(&app.config().identifier) {
+                    Ok(()) => eprintln!("[notify] bound to {}", app.config().identifier),
+                    Err(e) => eprintln!("[notify] set_application failed: {e:?}"),
+                }
             }
             // 1. Start the Python server sidecar on the chosen port (inherits our env).
             let mut server_cmd = Command::new(server_bin());
