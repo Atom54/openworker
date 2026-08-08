@@ -33,8 +33,9 @@ test("enable toggle pauses the task", async ({ page }) => {
   await openAutomations(page);
   await page.locator(".sched-card", { hasText: "Daily AI News" }).click();
   await expect(page.getByText(/Active · next/)).toBeVisible();
-  // The checkbox is visually hidden behind a styled slider — click the label wrapper.
-  await page.locator("label.switch").click();
+  // The checkbox is visually hidden behind a styled slider — click its label wrapper.
+  // Scoped by test id: the detail pane has a second switch (notify-on-completion).
+  await page.getByTestId("automation-enabled").locator("..").click();
   await expect(page.getByText("Paused", { exact: false })).toBeVisible();
 });
 

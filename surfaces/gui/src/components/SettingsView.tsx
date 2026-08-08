@@ -4,6 +4,7 @@ import {
   getTrustedWorkspaces,
   setCompactionSettings,
   setContextBar,
+  setNotificationSettings,
   setOnboarded,
   setPdfSettings,
   setScratchBase,
@@ -445,6 +446,8 @@ function AppearanceSection() {
 
       <SidebarCard />
 
+      <NotificationsCard />
+
       <ContextBarCard />
 
       <FilesCard />
@@ -805,6 +808,80 @@ function CompactionCard() {
         The summary is written by this model. The default follows whatever model the
         session is using.
       </div>
+    </div>
+  );
+}
+
+// -- Desktop notifications (owner ask 2026-08-08) -------------------------------
+// Off until asked for: the master switch is the opt-in, so nothing pops a system prompt
+// on first launch. macOS grants notification access to the app on first send and manages
+// it in System Settings afterwards — there is no in-app re-ask, hence the pointer below.
+const NOTIFICATION_KINDS = [
+  ["automation_done", "Scheduled run finished", "A automation you scheduled completed successfully."],
+  ["errors", "Scheduled run failed", "Something broke mid-run. Worth keeping on even if you silence the rest."],
+  ["attention", "Waiting on you", "An agent is asking a question or needs an approval before it can continue."],
+  ["turn_done", "Reply ready", "A conversation you left running has finished its answer."],
+] as const;
+
+function NotificationsCard() {
+  const [prefs, setPrefs] = useState<ModelSettings["notifications"] | null>(null);
+
+  useEffect(() => {
+    getSettings()
+      .then((s) => setPrefs(s.notifications ?? null))
+      .catch(() => setPrefs(null));
+  }, []);
+
+  const save = async (patch: Partial<NonNullable<ModelSettings["notifications"]>>) => {
+    setPrefs((p) => (p ? { ...p, ...patch } : p)); // optimistic: the switch shouldn't lag
+    const res = await setNotificationSettings(patch).catch(() => null);
+    if (res?.notifications) setPrefs(res.notifications);
+  };
+
+  if (!prefs) return null;
+  return (
+    <div className={CARD + " p-4 mb-4"} data-testid="notifications-card">
+      <div className={FIELD_LABEL}>Notifications</div>
+      <label className="flex items-start gap-3 py-2">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          data-testid="notifications-enabled"
+          checked={prefs.enabled}
+          onChange={(e) => save({ enabled: e.target.checked })}
+        />
+        <span>
+          <span className="block text-[13px] text-ink">Send system notifications</span>
+          <span className="block text-[12px] text-muted">
+            Tells you when work finishes or an agent needs you, even when OpenWorker is in the
+            background. Clicking one opens the conversation it came from. Nothing is sent while
+            you are already looking at that conversation.
+          </span>
+        </span>
+      </label>
+      {prefs.enabled && (
+        <div className="mt-1 ml-6 border-l border-hair pl-4">
+          {NOTIFICATION_KINDS.map(([key, label, help]) => (
+            <label key={key} className="flex items-start gap-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                data-testid={`notifications-${key}`}
+                checked={prefs[key]}
+                onChange={(e) => save({ [key]: e.target.checked })}
+              />
+              <span>
+                <span className="block text-[13px] text-ink">{label}</span>
+                <span className="block text-[12px] text-muted">{help}</span>
+              </span>
+            </label>
+          ))}
+          <div className={FIELD_HELP}>
+            A single automation can be silenced on its own from its page in Scheduled. If nothing
+            arrives at all, check OpenWorker under System Settings ▸ Notifications.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

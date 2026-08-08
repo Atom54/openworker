@@ -46,7 +46,12 @@ import { itemsFromMessages } from "./itemsFromMessages";
 import { addTurnUsage, emptyUsage, usageFromMessages } from "./usage";
 import { streamMode } from "./streamGate";
 import { InboxItemCard } from "./components/InboxItemCard";
-import { isTauri, platformOS, startWindowDrag } from "./tauri";
+import { isTauri, listenNotificationClick, platformOS, startWindowDrag } from "./tauri";
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  handleAttentionEvent,
+  type NotificationPrefs,
+} from "./notifications";
 import { Icon } from "./components/Icon";
 import { Sidebar } from "./components/Sidebar";
 import { ThinkingBlock, Transcript } from "./components/Transcript";
@@ -175,6 +180,9 @@ export function App() {
   // Settings: show the composer's context-window fill bar. OFF by default (owner ask),
   // so an older backend without the field also shows the session total.
   const [contextBar, setContextBar] = useState(false);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(
+    DEFAULT_NOTIFICATION_PREFS,
+  );
   // Per-session token usage (OPE-42): rebuilt from the transcript on session load,
   // accumulated live from assistant_message events, reset with the transcript.
   const [usage, setUsage] = useState<SessionUsage>(emptyUsage());
@@ -520,6 +528,7 @@ export function App() {
         setModelContextWindows(s.model_context_windows || {});
         setContextBar(s.context_bar === true);
         setModelReady(s.model_ready);
+        if (s.notifications) setNotificationPrefs(s.notifications);
         if (s.surfaces) setSurfaces(s.surfaces);
       })
       .catch(() => {});
@@ -981,8 +990,21 @@ export function App() {
   const [runToast, setRunToast] = useState<{
     title: string; sessionId: string; workspace: string; agent: string; time: string;
   } | null>(null);
+  // One socket, two consumers. Prefs and current session are read through a ref at event
+  // time — in the dep array they would tear down and rebuild the WebSocket constantly.
+  const notifyStateRef = useRef({ prefs: notificationPrefs, sessionId });
+  notifyStateRef.current = { prefs: notificationPrefs, sessionId };
   useEffect(() => {
     const stop = connectEvents((msg) => {
+      // macOS notification for anything wanting the user: finished run, finished turn,
+      // pending ask. Reads its own event type and ignores the rest.
+      handleAttentionEvent(msg, {
+        prefs: notifyStateRef.current.prefs,
+        ctx: {
+          focused: document.hasFocus(),
+          currentSessionId: notifyStateRef.current.sessionId,
+        },
+      });
       if (msg.type !== "automation_run_started") return;
       const d = (msg.data ?? {}) as Record<string, string>;
       setRunToast({
@@ -1001,6 +1023,18 @@ export function App() {
     const t = window.setTimeout(() => setRunToast(null), 5000);
     return () => window.clearTimeout(t);
   }, [runToast]);
+
+  // Clicking a notification lands here: the shell has already raised the window.
+  const selectSessionRef = useRef<typeof selectSession | null>(null);
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    listenNotificationClick((t) => {
+      selectSessionRef.current?.(t.session_id, t.workspace, t.agent);
+    }).then((off) => {
+      stop = off;
+    });
+    return () => stop?.();
+  }, []);
 
   // MEMORY-SPEC §5.1: undo a write the transcript just announced. A new memory is
   // deleted; an EDIT is rolled back to its previous text (deleting there would throw
@@ -1036,6 +1070,9 @@ export function App() {
       setUsage(emptyUsage());
     }
   };
+  // Kept current on every render so the notification-click listener (mounted once) always
+  // calls the latest closure instead of the one from first render.
+  selectSessionRef.current = selectSession;
   const switchAgent = async (name: string) => {
     setSurface("session");
     if (name === agent) return;

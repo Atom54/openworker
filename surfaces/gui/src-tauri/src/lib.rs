@@ -482,6 +482,55 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+// --- System notifications ---------------------------------------------------------
+// Sent through notify-rust rather than tauri-plugin-notification: the plugin's desktop
+// implementation shows and forgets, so a click can never be routed back to a session.
+//
+// Two macOS facts this depends on, both measured on 26.6 rather than assumed:
+//   * the main action button is what arms the response channel. Without it,
+//     `wait_for_response` returns `Closed(Expired)` in ~175ms and the click is lost.
+//   * `set_application` must name a LaunchServices-registered bundle; it fails for an
+//     unregistered one and notifications are then attributed to the parent process.
+
+/// Where a notification should take the user when clicked. Mirrors the fields
+/// `selectSession` needs on the JS side.
+#[derive(Clone, Serialize, serde::Deserialize)]
+struct NotificationTarget {
+    session_id: String,
+    workspace: String,
+    agent: String,
+}
+
+// ponytail: one blocked thread per pending notification, released on click or dismissal.
+// Bounded by how many notifications are outstanding at once (realistically single digits).
+// If that ever stops being true, batch them onto one worker thread.
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String, target: NotificationTarget) {
+    std::thread::spawn(move || {
+        let handle = notify_rust::Notification::new()
+            .summary(&title)
+            .body(&body)
+            // Load-bearing, see above: no action button means no response channel.
+            .action("default", "Ouvrir")
+            .show();
+        let Ok(handle) = handle else { return };
+        // The annotation is required: `wait_for_response` takes a higher-ranked FnOnce and
+        // inference would otherwise pin the closure to a single concrete lifetime.
+        let _ = handle.wait_for_response(|resp: &notify_rust::NotificationResponse| {
+            use notify_rust::NotificationResponse;
+            // `Default` is a click on the banner body; `Action` is our "Ouvrir" button.
+            // A dismissal (`Closed`) must not steal the user's place in the app.
+            match resp {
+                NotificationResponse::Default | NotificationResponse::Action(_) => {
+                    show_main(&app);
+                    let _ = app.emit("ow://notification-click", target.clone());
+                }
+                _ => {}
+            }
+        });
+    });
+}
+
 // --- Auto-update (tauri-plugin-updater) -------------------------------------------
 // The GUI drives updates through these commands (same invoke bridge as everything
 // else — no global plugin JS): check, background pre-download, install. Update
@@ -622,9 +671,18 @@ pub fn run() {
             check_for_update,
             download_update,
             clear_pending_update,
-            install_update
+            install_update,
+            notify
         ])
         .setup(move |app| {
+            // 0. Own our notifications: without this they are attributed to whatever process
+            // launched us (Terminal, in a shell-run dev build). Best-effort — it fails when the
+            // bundle is not registered with LaunchServices, which is exactly the dev case, and
+            // an unattributed notification is still better than none.
+            #[cfg(target_os = "macos")]
+            {
+                let _ = notify_rust::set_application(&app.config().identifier);
+            }
             // 1. Start the Python server sidecar on the chosen port (inherits our env).
             let mut server_cmd = Command::new(server_bin());
             server_cmd

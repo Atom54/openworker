@@ -153,6 +153,7 @@ class SessionManager:
         # Sessions with an auto-title LLM call in flight (FB-010) — one call at a time.
         self._autotitle_inflight: set[str] = set()
         self._autotitle_tasks: set[asyncio.Task] = set()
+        self._attention_tasks: set[asyncio.Task] = set()
         self._autotitle_attempts: dict[str, int] = {}
         self.workspace_trust = WorkspaceTrustStore()
         self.secrets = SecretStore()
@@ -199,6 +200,10 @@ class SessionManager:
         # Inbox (cross-session human-attention queue), routing (named inboxes + Slack/Telegram
         # bindings), the Unattended toggle, and self-wake records.
         self.inbox = InboxStore(base / "inbox.json")
+        # Every pending prompt becomes an app-wide attention event, whatever created it.
+        # Hooked at the store rather than the ~9 call sites: attended sessions only mirror
+        # VIS_INBOX items (app.py `_mirror`), so anything higher up misses inline prompts.
+        self.inbox.on_add = self._announce_inbox_item
         self.inbox_routing = InboxRouting(base / "inbox_routing.json")
         self.unattended = UnattendedRegistry(base / "unattended.json")
         self.wakes = WakeStore(base / "wakes.json")
@@ -1877,6 +1882,7 @@ class SessionManager:
             "nav_layout": self._nav_layout(),
             "sessions_peek": self.sessions_peek(),
             "context_bar": self.context_bar(),
+            "notifications": self.notifications(),
             "scratch_base": self._prefs.get("scratch_base")
             or self.DEFAULT_SCRATCH_BASE,
             # Where global skills live — the raw value as entered, else the default folder.
@@ -1997,6 +2003,29 @@ class SessionManager:
             "compaction_cap_tokens": settings["cap_tokens"],
             "compaction_model": settings["model"],
         }
+
+    # -- desktop notification preferences ---------------------------------------
+    # Stored server-side like the other pure-UI prefs (nav_layout, sessions_peek,
+    # context_bar). `enabled` starts off: turning it on in Settings is what asks macOS for
+    # permission, so nothing prompts the user out of the blue on first launch.
+    NOTIFICATION_KINDS = ("automation_done", "turn_done", "attention", "errors")
+
+    def notifications(self) -> dict[str, bool]:
+        stored = self._prefs.get("notifications") or {}
+        out = {"enabled": bool(stored.get("enabled", False))}
+        for kind in self.NOTIFICATION_KINDS:
+            out[kind] = bool(stored.get(kind, True))
+        return out
+
+    def set_notifications(self, patch: dict[str, Any]) -> dict[str, Any]:
+        """Merge a partial update, so toggling one switch can't clear the others."""
+        current = self.notifications()
+        for key in ("enabled", *self.NOTIFICATION_KINDS):
+            if key in (patch or {}):
+                current[key] = bool(patch[key])
+        self._prefs["notifications"] = current
+        self._save_prefs()
+        return {"ok": True, "notifications": current}
 
     def set_compaction_settings(
         self,
@@ -2612,6 +2641,62 @@ class SessionManager:
             except Exception:
                 self.unregister_event_client(cb)
 
+    # -- attention events (app-wide; drive the desktop system notification) ------
+    # One event type for every "this wants you" moment, discriminated by `reason`, so the
+    # GUI has a single handler and a single settings lookup. Emitted from three sync
+    # choke points, hence the fire-and-forget scheduling below.
+
+    def _fire_attention(self, data: dict[str, Any]) -> None:
+        """Schedule an attention broadcast from a sync caller. No running loop (a sync
+        test, a CLI path) means no sockets either, so skipping is correct, not lossy."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            self.broadcast_event({"type": "attention", "data": data})
+        )
+        # The loop keeps only a weak ref; without retaining it the task can be GC'd mid-flight.
+        self._attention_tasks.add(task)
+        task.add_done_callback(self._attention_tasks.discard)
+
+    def _announce_inbox_item(self, item) -> None:
+        """InboxStore.on_add: a new pending prompt anywhere becomes an attention event."""
+        record = self.session_store.load(item.session_id)
+        self._fire_attention(
+            {
+                "reason": "inbox",
+                "kind": item.kind,
+                "session_id": item.session_id,
+                "title": item.title,
+                "body": item.body,
+                "workspace": getattr(record, "workspace", "") or "",
+                "agent": getattr(record, "agent", "") or "",
+            }
+        )
+
+    def _announce_turn_done(self, session_id: str) -> None:
+        """mark_idle: a chat turn finished. Automation runs are excluded — they get their
+        own task_done, and both would fire for the same event."""
+        if session_id.startswith("__"):
+            return
+        if self.task_store.task_for_run_session(session_id) is not None:
+            return
+        engine = self._engines.get(session_id)
+        record = self.session_store.load(session_id)
+        self._fire_attention(
+            {
+                "reason": "turn_done",
+                "session_id": session_id,
+                "title": getattr(record, "title", None) or "Session",
+                "body": (
+                    (_last_assistant_text(engine.messages) or "") if engine else ""
+                ).strip()[:280],
+                "workspace": getattr(record, "workspace", "") or "",
+                "agent": getattr(record, "agent", "") or "",
+            }
+        )
+
     def register_session_client(self, session_id: str, send_cb: Any) -> None:
         self._session_clients.setdefault(session_id, set()).add(send_cb)
 
@@ -2969,6 +3054,7 @@ class SessionManager:
         # finishes — the one shared post-turn moment, so auto-titling hooks in here and
         # can never add latency to the response itself.
         self._maybe_autotitle(session_id)
+        self._announce_turn_done(session_id)
 
     def is_running(self, session_id: str) -> bool:
         return session_id in self._running_sessions
@@ -3250,8 +3336,6 @@ class SessionManager:
             run.result_text = _last_assistant_text(engine.messages)
             run.artifacts = _recent_files(task.workspace, since=run.started_at)
             run.status = "ok"
-            if task.notify_on_completion:
-                await self._notify_task_done(task, run)
         except Exception as exc:
             run.status, run.error = "error", str(exc)
         finally:
@@ -3264,10 +3348,16 @@ class SessionManager:
             except Exception:
                 pass
             self.task_store.add_run(run)
+            # Notify from `finally`, not from the try: a run that raised is exactly the one
+            # the user most needs told about, and announcing it from the success path meant
+            # a failed run reached nobody — not even the Telegram notify_target.
+            if task.notify_on_completion:
+                await self._notify_task_done(task, run)
         return run
 
     async def _notify_task_done(self, task, run: TaskRun) -> None:
-        summary = (run.result_text or "").strip()[:280]
+        summary = (run.result_text or run.error or "").strip()[:280]
+        ok = run.status == "ok"
         # Notify any socket viewing this scheduled run's session (it's a durable session of its own).
         await self.broadcast_session(
             run.session_id,
@@ -3280,6 +3370,24 @@ class SessionManager:
                     "run_id": run.run_id,
                 },
             },
+        )
+        # …and app-wide, which is the path that actually reaches the user: the GUI holds a
+        # socket only for the session it is showing, never for a scheduled run's own session.
+        await self.broadcast_event(
+            {
+                "type": "attention",
+                "data": {
+                    "reason": "task_done",
+                    "status": run.status,
+                    "session_id": run.session_id,
+                    "title": task.title,
+                    "body": summary,
+                    "task_id": task.id,
+                    "run_id": run.run_id,
+                    "workspace": task.workspace,
+                    "agent": task.agent,
+                },
+            }
         )
         if task.notify_target:
             from ..connectors.base import parse_target
@@ -3294,7 +3402,7 @@ class SessionManager:
                         sender,
                         creds["bot_token"],
                         chat_id,
-                        f"✓ {task.title}\n\n{summary}",
+                        f"{'✓' if ok else '✗'} {task.title}\n\n{summary}",
                         thread,
                     )
             except Exception:
@@ -3416,6 +3524,10 @@ class SessionManager:
             task.model = overrides["model"]
         if "thinking" in overrides:
             task.thinking = overrides["thinking"]
+        # Per-automation silence: an automation that reliably works doesn't need to announce
+        # itself. The field always existed and was honoured; nothing could ever set it.
+        if "notify_on_completion" in changes:
+            task.notify_on_completion = bool(changes["notify_on_completion"])
         if changes.get("revoke"):
             # Revocation from the task detail page ("Allowed without asking … · Revoke").
             # Human-only, like minting; the agent-facing update tool has no such field.

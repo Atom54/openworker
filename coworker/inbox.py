@@ -98,6 +98,10 @@ class InboxItem:
 class InboxStore:
     def __init__(self, path: Optional[str | Path] = None) -> None:
         self.path = Path(path) if path else None
+        # Fired once per genuinely new item, for surfaces that need to know an item exists
+        # without polling (today: the desktop attention notification). Set by the manager.
+        # Sync and best-effort by contract — never let a listener break item creation.
+        self.on_add: Optional[Any] = None
         self._lock = threading.Lock()
         self._items: dict[str, InboxItem] = {}
         self._waiters: dict[str, asyncio.Event] = {}
@@ -163,6 +167,13 @@ class InboxStore:
         with self._lock:
             self._items[item.id] = item
             self._save()
+        # Outside the lock, and only on this path — the `tool_call_id` early return above
+        # means a durable resume re-raising a known prompt never re-announces it.
+        if self.on_add is not None:
+            try:
+                self.on_add(item)
+            except Exception:
+                pass
         return item
 
     def for_tool_call(self, session_id: str, tool_call_id: str) -> Optional[InboxItem]:

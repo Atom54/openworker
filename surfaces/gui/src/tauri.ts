@@ -102,6 +102,27 @@ export async function listenDictationDownloadProgress(
   })) as () => void;
 }
 
+// --- System notifications (desktop only; inert in the browser) -------------------
+
+export type NotificationTarget = { session_id: string; workspace: string; agent: string };
+
+/** Post a macOS notification. The shell blocks a thread on the user's verdict and emits
+ * `ow://notification-click` if they activate it, so `target` is what gets us back to the
+ * right session. Fire-and-forget: a browser build simply has no `invoke` to call. */
+export const sendNotification = (title: string, body: string, target: NotificationTarget) =>
+  invoke<void>("notify", { title, body, target });
+
+/** Subscribe to notification clicks. Returns an unsubscribe fn (a no-op in the browser). */
+export async function listenNotificationClick(
+  handler: (target: NotificationTarget) => void,
+): Promise<() => void> {
+  const listen = (globalThis as any).__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return (await listen("ow://notification-click", (event: { payload: NotificationTarget }) => {
+    handler(event.payload);
+  })) as () => void;
+}
+
 // --- Auto-update (desktop only; browser builds see null / throw) -----------------
 
 export type UpdateInfo = { version: string; notes: string };

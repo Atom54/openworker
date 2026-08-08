@@ -1539,6 +1539,11 @@ def create_app(manager: SessionManager) -> FastAPI:
         # Sidebar: sessions shown per group before "Show more" (owner ask, 2026-07-03).
         return manager.set_sessions_peek((body or {}).get("sessions_peek", 5))
 
+    @app.post("/v1/settings/notifications")
+    def settings_set_notifications(body: dict) -> dict[str, Any]:
+        # Desktop system notifications: master switch + the four categories.
+        return manager.set_notifications(body or {})
+
     @app.post("/v1/settings/context-bar")
     def settings_set_context_bar(body: dict) -> dict[str, Any]:
         # Composer: show the context-window fill bar, or just the popover (owner ask).

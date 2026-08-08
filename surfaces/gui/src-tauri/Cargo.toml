@@ -18,6 +18,10 @@ tauri-plugin-dialog = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+# NOT tauri-plugin-notification: its desktop path is fire-and-forget (`spawn(async {
+# notification.show() })`) and `onAction` is Android/iOS only, so a click can never come
+# back. notify-rust is the layer that plugin sits on, and it does report the click.
+notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }

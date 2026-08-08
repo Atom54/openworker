@@ -752,6 +752,28 @@ export interface ModelSettings {
   compaction_threshold_pct?: number; // default 0.8, 0.10–0.95
   compaction_cap_tokens?: number; // default 250000
   compaction_model?: string;
+  // Desktop system notifications: master switch + the four categories. Optional so the
+  // GUI is robust to an older backend (absent → the defaults, master off).
+  notifications?: {
+    enabled: boolean;
+    automation_done: boolean;
+    turn_done: boolean;
+    attention: boolean;
+    errors: boolean;
+  };
+}
+
+/** Persist a partial notification-prefs change; the server merges, so one switch can't
+ * clear the others. */
+export async function setNotificationSettings(
+  patch: Partial<NonNullable<ModelSettings["notifications"]>>,
+): Promise<{ ok: boolean; notifications: NonNullable<ModelSettings["notifications"]> }> {
+  const res = await fetch(`${httpBase()}/v1/settings/notifications`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return res.json();
 }
 
 export interface PdfSettings {

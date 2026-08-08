@@ -454,6 +454,12 @@ function TaskDetail({
     await updateAutomation(id, { enabled: !task.enabled });
     refresh();
   };
+  // Per-automation silence: one that reliably works shouldn't announce itself every run.
+  // Failures still reach the Scheduled badge; this only mutes the notification.
+  const toggleNotify = async () => {
+    await updateAutomation(id, { notify_on_completion: !task.notify_on_completion });
+    refresh();
+  };
   const remove = async () => {
     await deleteAutomation(id);
     announceAutomationsChanged(); // the sidebar band must not wait out its poll
@@ -520,7 +526,12 @@ function TaskDetail({
         ) : (
           <div className="conn-meta">
             <label className="switch">
-              <input type="checkbox" checked={task.enabled} onChange={toggle} />
+              <input
+                type="checkbox"
+                data-testid="automation-enabled"
+                checked={task.enabled}
+                onChange={toggle}
+              />
               <span className="slider" />
             </label>{" "}
             {task.enabled ? `Active · next ${fmt(task.next_run)}` : "Paused"} · {task.schedule}
@@ -528,6 +539,20 @@ function TaskDetail({
               <> · {choices?.labels[task.model] || task.model}</>
             )}
             {task.thinking && <> · {task.thinking} thinking</>}
+            <div className="mt-2">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  data-testid="notify-on-completion"
+                  checked={task.notify_on_completion !== false}
+                  onChange={toggleNotify}
+                />
+                <span className="slider" />
+              </label>{" "}
+              {task.notify_on_completion !== false
+                ? "Notifies when it finishes"
+                : "Runs silently"}
+            </div>
           </div>
         )}
 

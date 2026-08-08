@@ -82,7 +82,9 @@ All three are sync callers. Fire-and-forget uses the pattern already at `manager
 `surfaces/gui/src/notifications.ts`:
 
 - `shouldNotify(ev, prefs, ctx) -> {title, body} | null` — pure, no I/O, no Tauri, fully testable. Order: master off → null; the category's toggle off → null; `ctx.focused && ev.session_id === ctx.currentSessionId` → null.
-- `installNotifications(getCtx)` — subscribes through the existing `connectEvents()`, applies `shouldNotify`, sends.
+- `handleAttentionEvent(msg, state)` — applies `shouldNotify` to one frame and sends.
+
+It deliberately does **not** own a subscription. The first cut called `connectEvents()` itself, which opened a *second* `/ws/events` socket alongside the automation toast's; the e2e fixture registers one socket per page, so pushes reached only one of the two consumers and the toast specs went red. App.tsx's single existing `connectEvents` effect now feeds both consumers.
 
 Focus is read at event time via `document.hasFocus()`. No listener, no state.
 
@@ -113,6 +115,8 @@ Ceiling, to be marked with a `ponytail:` comment: one blocked thread per pending
 - `tests/test_notifications_events.py` — a fake client via `register_event_client`: one `attention` event per Inbox add; **zero** second event for a duplicate `tool_call_id`; `task_done` emitted with `status="error"` when the run raises (locking the bug fixed in §2b).
 - `surfaces/gui/src/notifications.test.ts` — `shouldNotify` truth table: master off, each category off, focused + same session, focused + different session, unfocused.
 - The Rust/macOS layer has no automated test; it needs a real signed bundle. Covered by the spike above and manual verification.
+
+Also added: a `data-testid` on the automation enable switch. The detail pane now holds two `label.switch` elements, and `e2e/automations-manage.spec.ts` located the first by bare CSS.
 
 ## Out of scope
 
