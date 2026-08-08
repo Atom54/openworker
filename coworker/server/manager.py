@@ -3355,6 +3355,21 @@ class SessionManager:
                 await self._notify_task_done(task, run)
         return run
 
+    def _task_done_attention(self, task, run: TaskRun) -> dict[str, Any]:
+        """The attention payload for a finished run. Shared so the scheduled and manual
+        paths cannot drift — a manual run is the same event to the user."""
+        return {
+            "reason": "task_done",
+            "status": run.status,
+            "session_id": run.session_id,
+            "title": task.title,
+            "body": (run.result_text or run.error or "").strip()[:280],
+            "task_id": task.id,
+            "run_id": run.run_id,
+            "workspace": task.workspace,
+            "agent": task.agent,
+        }
+
     async def _notify_task_done(self, task, run: TaskRun) -> None:
         summary = (run.result_text or run.error or "").strip()[:280]
         ok = run.status == "ok"
@@ -3374,20 +3389,7 @@ class SessionManager:
         # …and app-wide, which is the path that actually reaches the user: the GUI holds a
         # socket only for the session it is showing, never for a scheduled run's own session.
         await self.broadcast_event(
-            {
-                "type": "attention",
-                "data": {
-                    "reason": "task_done",
-                    "status": run.status,
-                    "session_id": run.session_id,
-                    "title": task.title,
-                    "body": summary,
-                    "task_id": task.id,
-                    "run_id": run.run_id,
-                    "workspace": task.workspace,
-                    "agent": task.agent,
-                },
-            }
+            {"type": "attention", "data": self._task_done_attention(task, run)}
         )
         if task.notify_target:
             from ..connectors.base import parse_target
@@ -3611,6 +3613,11 @@ class SessionManager:
             task.last_run, task.last_status = run.finished_at, "ok"
             task.run_count += 1
             self.task_store.save(task)
+            # Same notification as a scheduled run. "Run now" used to stay silent on the
+            # assumption that the user is watching — which breaks the moment they start it
+            # and minimise the window. The focus rule already handles the watching case.
+            if task.notify_on_completion:
+                self._fire_attention(self._task_done_attention(task, run))
         return {"ok": True, "run": run.to_dict()}
 
     def save(self, session_id: str, engine: TurnEngine) -> None:

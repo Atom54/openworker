@@ -243,3 +243,41 @@ def test_update_automation_sets_notify_on_completion(tmp_path):
     # A PATCH that doesn't mention the key leaves it alone.
     manager.update_automation(task.id, {"title": "Renamed"})
     assert manager.task_store.get(task.id).notify_on_completion is False
+
+
+@pytest.mark.asyncio
+async def test_manual_run_notifies_like_a_scheduled_one(tmp_path, monkeypatch):
+    """"Run now" used to be silent: it goes through finalize_manual_run, not
+    _run_scheduled_task, and the turn_done fallback excludes run sessions."""
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    manager = SessionManager(data_dir=tmp_path / "data", provider=ScriptedProvider([]))
+    seen = _collector(manager)
+    task = _task(workspace=str(ws), agent="cowork")
+    manager.task_store.save(task)
+
+    prepared = manager.prepare_manual_run(task.id)
+    manager.finalize_manual_run(task.id, prepared["run_id"])
+    await asyncio.sleep(0)
+
+    done = [e for e in _attention(seen) if e["reason"] == "task_done"]
+    assert len(done) == 1
+    assert done[0]["task_id"] == task.id
+
+
+@pytest.mark.asyncio
+async def test_silenced_automation_stays_silent_on_manual_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    manager = SessionManager(data_dir=tmp_path / "data", provider=ScriptedProvider([]))
+    seen = _collector(manager)
+    task = _task(workspace=str(ws), agent="cowork", notify_on_completion=False)
+    manager.task_store.save(task)
+
+    prepared = manager.prepare_manual_run(task.id)
+    manager.finalize_manual_run(task.id, prepared["run_id"])
+    await asyncio.sleep(0)
+
+    assert [e for e in _attention(seen) if e["reason"] == "task_done"] == []
