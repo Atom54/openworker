@@ -19,7 +19,7 @@ import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "
 // LOCAL once the user's own Google client is set up below (no cloud sign-in, and
 // the mailbox stays connected), else the broker's — parked until CASA clears.
 
-const LABEL = "text-[12.5px] text-muted w-24 shrink-0";
+const LABEL = "text-[13px] text-muted w-24 shrink-0";
 
 export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps) {
   const [busy, setBusy] = useState(false);
@@ -39,7 +39,7 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
         <ConnectorBadge connector={c} size={44} title="Gmail" />
         <div className="min-w-0 flex-1">
           <h2 className="text-[20px] font-semibold tracking-tight leading-tight">Gmail</h2>
-          <div className="text-[12.5px] text-muted flex items-center gap-1.5">
+          <div className="text-[13px] text-muted flex items-center gap-1.5">
             {c.connected ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-ok" />
@@ -75,7 +75,7 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
 
       {!c.connected && (
         <div className={GRP}>
-          <div className={ROW + " text-[12.5px] text-muted"}>
+          <div className={ROW + " text-[13px] text-muted"}>
             Sign in with Google — each mailbox stays separate, agents say which one they use.
             {c.google_client_ready || cloud?.signed_in ? "" : " Set up one-click below."}
           </div>
@@ -206,7 +206,7 @@ function ChipListRow({
         {values.map((v) => (
           <span
             key={v}
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-paper border border-line text-[12.5px]"
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-paper border border-line text-[13px]"
           >
             {v}
             <button
@@ -219,7 +219,7 @@ function ChipListRow({
           </span>
         ))}
         <input
-          className="flex-1 min-w-[140px] bg-transparent text-[12.5px] outline-none placeholder:text-faint"
+          className="flex-1 min-w-[140px] bg-transparent text-[13px] outline-none placeholder:text-faint"
           placeholder={placeholder}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
