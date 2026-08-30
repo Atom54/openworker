@@ -30,7 +30,10 @@ DEFAULT_ALLOWED_COMMANDS: list[str] = []
 @dataclass
 class Config:
     model: str = "gpt-5.6-sol"
-    mode: str = "interactive"
+    # Owner call: this build starts in bypass-approvals — no per-tool approval prompt.
+    # The Phase 1 floors still hold (settings files, writes outside the granted roots,
+    # .git/hooks), and any mode stays selectable per session in the composer.
+    mode: str = "bypass-approvals"
     max_iterations: int = 150
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)

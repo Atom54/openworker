@@ -32,11 +32,11 @@ test("composer: send-gating, + attach menu, Mode menu", async ({ page }) => {
   await expect(menu.getByText("Discuss")).toBeVisible();
   await expect(menu.getByText("Plan", { exact: true })).toHaveCount(0);
   await expect(menu.getByText("Custom", { exact: true })).toHaveCount(0);
-  // The current mode is marked with a ✓.
-  await expect(menu.locator("button").filter({ hasText: "Ask for approval" })).toContainText("✓");
+  // The current mode is marked with a ✓ — this build defaults to Bypass approvals (Config.mode).
+  await expect(menu.locator("button").filter({ hasText: "Bypass approvals" })).toContainText("✓");
   await expect(menu.getByRole("switch", { name: "Send approvals to the Inbox" })).toBeVisible();
   // Picking an option closes the menu (and would flip the live engine's mode).
-  await menu.getByText("Bypass approvals").click();
+  await menu.getByText("Ask for approval").click();
   await expect(page.getByTestId("mode-menu")).toHaveCount(0);
 });
 

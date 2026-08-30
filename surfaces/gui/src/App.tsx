@@ -227,7 +227,7 @@ export function App() {
   // accumulated live from assistant_message events, reset with the transcript.
   const [usage, setUsage] = useState<SessionUsage>(emptyUsage());
   const [surfaces, setSurfaces] = useState<SurfaceVisibility>({ cowork: true, chat: false, code: false });
-  const [mode, setMode] = useState("interactive");
+  const [mode, setMode] = useState("auto"); // Bypass approvals — matches Config.mode
   const [connected, setConnected] = useState(false);
   const [running, setRunning] = useState(false);
   // Transient "Compacting context…" indicator (OPE-27): set by the `compacting` event,
@@ -712,7 +712,7 @@ export function App() {
           setConnected(true);
           if (d.model) setModel(d.model);
           setThinkingLevel(d.thinking ?? null);
-          if (d.mode) setMode(d.mode);
+          if (d.mode) setMode(d.mode === "bypass-approvals" ? "auto" : d.mode);
           if (d.command_trust?.required) setWorkspaceTrustRequest(d.command_trust);
           // Cowork: adopt the server-provisioned scratch dir (only when we don't already have one).
           if (d.workspace) setWorkspace((cur) => cur || d.workspace);
