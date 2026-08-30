@@ -1,7 +1,7 @@
 // Per-automation run settings: the model picker defaults to "App default", and the
 // thinking level is only offered on the native OpenAI wire (every other provider spells
 // thinking differently and rejects the parameter — see SessionManager._task_model_settings).
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("../api", () => ({
@@ -97,5 +97,18 @@ it("submits the chosen model and level", async () => {
     title: "Nightly digest",
     model: "gpt-5.6-sol",
     thinking: "low",
+  });
+});
+
+describe("ScheduledView empty state", () => {
+  it("renders translated emphasis as a strong element, not literal markup", () => {
+    const { container } = render(
+      <ScheduledView onOpenRun={vi.fn()} onRunNow={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByText("+ New automation", { selector: "strong" }),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain("<strong>");
   });
 });
