@@ -15,7 +15,20 @@ from .permissions import Mode
 from .secrets import state_dir
 
 
+REMOTE_COMMANDS = ("join", "auth", "up", "status", "leave", "secrets", "service")
+
+
 def main(argv: Optional[list[str]] = None) -> None:
+    import sys
+
+    # Remote-home verbs run headless (no TUI) and must win over the positional
+    # `skill` argument — `openworker join <url>` is a command, not a skill.
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] in REMOTE_COMMANDS:
+        from .remote.joiner import cli as remote_cli
+
+        raise SystemExit(remote_cli(args))
+
     cfg = load_config()
     parser = argparse.ArgumentParser(
         prog="openworker", description="Agent coworker (TUI)."
