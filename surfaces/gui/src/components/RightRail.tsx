@@ -19,6 +19,10 @@ import type { SessionInfo, TodoItem } from "../types";
 import { AccessSection } from "./AccessSection";
 import { BoardSection } from "./BoardPanel";
 import { Icon } from "./Icon";
+import { formatTokens, totalTokens } from "../usage";
+import type { SessionUsage, TurnUsage } from "../types";
+
+const totalOf = (u: TurnUsage) => u.input + u.output + u.cache_read + u.cache_write;
 import { Markdown, OPEN_ARTIFACT_EVENT } from "./Markdown";
 
 type Panel = "progress" | "artifacts" | "board" | "journal" | "team" | "files";
@@ -76,6 +80,8 @@ interface Props {
   teamMembers?: SessionInfo[];
   teamChatEnabled?: boolean;
   teamChatUnread?: number;
+  // Tokens by model for the lead plus its workers (spec §5) — shown under the members.
+  teamUsage?: SessionUsage;
   onOpenTeamChat?: () => void;
   onOpenWorker?: (s: SessionInfo) => void;
   // Bumped when a [.](board:) chip in the transcript is clicked — expands the Board section.
@@ -105,6 +111,7 @@ export function RightRail({
   teamMembers = [],
   teamChatEnabled = false,
   teamChatUnread = 0,
+  teamUsage,
   onOpenTeamChat,
   onOpenWorker,
   openBoardKey = 0,
@@ -162,7 +169,7 @@ export function RightRail({
       setJournal([]);
       return;
     }
-    getJournalCases().then(setJournal).catch(() => setJournal([]));
+    getJournalCases(sessionId).then(setJournal).catch(() => setJournal([]));
   }, [active, sessionId, refreshKey, board?.space]);
 
   // Switching conversations closes any open artifact — it belongs to the previous session's
@@ -326,6 +333,24 @@ export function RightRail({
                     <span className="rail-team-name">{t("rail.team_chat")}</span>
                     {teamChatUnread > 0 && <span className="team-chat-badge">{teamChatUnread}</span>}
                   </button>
+                )}
+                {teamUsage && totalTokens(teamUsage) > 0 && (
+                  /* Tokens for the whole tree (lead + workers), by model. Counts only —
+                     no dollars (owner ruling, spec §5). */
+                  <div className="rail-team-usage" data-testid="team-usage">
+                    <div className="rail-team-usage-head">
+                      <span>{t("misc.rail.tokens")}</span>
+                      <span className="text-muted">{formatTokens(totalTokens(teamUsage))}</span>
+                    </div>
+                    {Object.entries(teamUsage.byModel)
+                      .sort((a, b) => totalOf(b[1]) - totalOf(a[1]))
+                      .map(([model, u]) => (
+                        <div className="rail-team-usage-row" key={model} title={t("misc.rail.usage_title", { model, input: u.input, output: u.output, cached: u.cache_read })}>
+                          <span className="rail-team-usage-model">{model.includes(":") ? model.split(":").slice(1).join(":") : model}</span>
+                          <span className="text-muted">{formatTokens(totalOf(u))}</span>
+                        </div>
+                      ))}
+                  </div>
                 )}
               </div>
             </RailSection>
