@@ -559,6 +559,9 @@ class TurnEngine:
                 payload["reasoning"] = turn.reasoning
             if turn.usage is not None:
                 payload["usage"] = {"model": self.model, **turn.usage.as_dict()}
+            if turn.finish_reason:
+                # How the reply ended (OPE-173): `stop` / `tool_calls` / `length`.
+                payload["finish_reason"] = turn.finish_reason
             yield Event(EventType.ASSISTANT_MESSAGE, payload)
 
             if not turn.tool_calls:
@@ -1982,10 +1985,10 @@ class TurnEngine:
         """
         # Strip the display-only sidecars — `source` (connector cards), `_display`
         # (e.g. filter-hidden counts), `ts` (append-time timestamps), `reasoning`
-        # (thinking text), and `usage` (token counts) — copying only messages that carry
-        # one. Whole `notice` messages (error/interrupted/model-switch markers) are
-        # display-only too: dropped entirely.
-        _SIDECARS = ("source", "_display", "ts", "reasoning", "usage")
+        # (thinking text), `usage` (token counts), and `finish_reason` (how the reply
+        # ended) — copying only messages that carry one. Whole `notice` messages
+        # (error/interrupted/model-switch markers) are display-only too: dropped entirely.
+        _SIDECARS = ("source", "_display", "ts", "reasoning", "usage", "finish_reason")
         # Auto-compaction (OPE-27): everything before the boundary is represented by the
         # compacted block. Outbound-only — the canonical history stays intact — and the
         # block+tail are byte-stable between turns, so prompt caching keeps working.
@@ -2095,6 +2098,15 @@ def _assistant_message(turn: AssistantTurn, model: Optional[str] = None) -> dict
         # stripped before provider calls. Tagged with the model that produced it so
         # per-model rollups survive mid-session model switches.
         message["usage"] = {"model": model, **turn.usage.as_dict()}
+    if turn.finish_reason:
+        # How the reply ended, in the engine's normalised vocabulary (`stop` /
+        # `tool_calls` / `length`; unknown provider values pass through). Persisted
+        # so a saved session can tell "chose to stop" from "hit the output limit"
+        # without re-deriving it from token counts (OPE-173). Omitted — never null —
+        # for partial turns and providers that report no stop reason. Stripped before
+        # every provider call (`_outbound_messages`). The provider's raw value, where
+        # it differs, lives in that provider's sidecar (e.g. `_anthropic.stop_reason`).
+        message["finish_reason"] = turn.finish_reason
     if turn.reasoning:
         # Display-only thinking text — rendered by the GUI, stripped for every provider
         # (`_outbound_messages`); provider-private replay blocks go via `extras` instead.

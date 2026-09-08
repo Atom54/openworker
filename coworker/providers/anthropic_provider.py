@@ -376,9 +376,20 @@ def _reasoning_text(thinking_blocks: list[dict[str, Any]]) -> Optional[str]:
     return text or None
 
 
-def _thinking_extras(thinking_blocks: list[dict[str, Any]]) -> dict[str, Any]:
-    """Raw blocks → the `_anthropic` sidecar convert_messages replays (empty when none)."""
-    return {"_anthropic": {"blocks": thinking_blocks}} if thinking_blocks else {}
+def _anthropic_extras(
+    thinking_blocks: list[dict[str, Any]], stop_reason: Any = None
+) -> dict[str, Any]:
+    """The `_anthropic` sidecar persisted on the assistant message (empty when nothing
+    to keep): raw thinking blocks, which convert_messages replays verbatim, and the raw
+    `stop_reason` (OPE-173) so values the engine's finish_reason map collapses —
+    `pause_turn`, `stop_sequence` → "stop" — stay recoverable from a saved session.
+    convert_messages only reads `blocks`; other providers strip the whole key."""
+    sidecar: dict[str, Any] = {}
+    if thinking_blocks:
+        sidecar["blocks"] = thinking_blocks
+    if stop_reason:
+        sidecar["stop_reason"] = stop_reason
+    return {"_anthropic": sidecar} if sidecar else {}
 
 
 class AnthropicProvider(ProviderClient):
@@ -526,7 +537,7 @@ class AnthropicProvider(ProviderClient):
             finish_reason=_STOP_REASON_MAP.get(stop_reason, stop_reason),
             raw=response,
             reasoning=_reasoning_text(thinking_blocks),
-            extras=_thinking_extras(thinking_blocks),
+            extras=_anthropic_extras(thinking_blocks, stop_reason),
             usage=_usage_from(getattr(response, "usage", None)),
         )
 
@@ -647,7 +658,7 @@ class AnthropicProvider(ProviderClient):
                 tool_calls=tool_calls,
                 finish_reason=_STOP_REASON_MAP.get(stop_reason, stop_reason),
                 reasoning=_reasoning_text(thinking_blocks),
-                extras=_thinking_extras(thinking_blocks),
+                extras=_anthropic_extras(thinking_blocks, stop_reason),
                 usage=usage,
             )
         )
