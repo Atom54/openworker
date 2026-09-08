@@ -173,7 +173,9 @@ MATRIX: dict[str, ModelEntry] = {
             tools=True, vision=True, parallel_tool_calls=True, streaming=True
         ),
     ),
-    "zai:glm-5.2": ModelEntry("GLM-5.2 · Z AI", _AGENTIC, 128_000),
+    # GLM-5.2 shipped with a 1M window (docs.z.ai, read 2026-09-08: "1M" context,
+    # 128K output); the 128,000 here was stale and compacted it at 102,400 (OPE-170).
+    "zai:glm-5.2": ModelEntry("GLM-5.2 · Z AI", _AGENTIC, 1_000_000),
     "deepseek:deepseek-v4-flash": ModelEntry(
         "DeepSeek V4 Flash · DeepSeek", _AGENTIC, 128_000
     ),
@@ -189,7 +191,11 @@ MATRIX: dict[str, ModelEntry] = {
     ),
     # -- resellers (their model namespaces, verbatim) -----------------------------
     "together:thinkingmachines/Inkling": ModelEntry("Inkling · via Together"),
-    "together:zai-org/GLM-5.2": ModelEntry("GLM-5.2 · via Together", _AGENTIC, 128_000),
+    # Together windows below are the `context_length` values its /v1/models catalog
+    # reported on 2026-09-08 (exact, per model; GLM-5.2 really is 1,048,575 there).
+    "together:zai-org/GLM-5.2": ModelEntry(
+        "GLM-5.2 · via Together", _AGENTIC, 1_048_575
+    ),
     # Kimi K3 on Together (landed late July 2026): 1M window, native vision; PDFs
     # unverified over the compat surface (falls back via pdf_support.py, like Muse Spark).
     "together:moonshotai/Kimi-K3": ModelEntry(
@@ -197,22 +203,23 @@ MATRIX: dict[str, ModelEntry] = {
         ModelCapabilities(
             tools=True, vision=True, parallel_tool_calls=True, streaming=True
         ),
-        1_000_000,
+        1_048_576,
     ),
     "together:moonshotai/Kimi-K2.7-Code": ModelEntry(
-        "Kimi K2.7 Code · via Together", _AGENTIC, 256_000
+        "Kimi K2.7 Code · via Together", _AGENTIC, 262_144
     ),
     "together:moonshotai/Kimi-K2.6": ModelEntry(
-        "Kimi K2.6 · via Together", _AGENTIC, 256_000
+        "Kimi K2.6 · via Together", _AGENTIC, 262_144
     ),
     "together:deepseek-ai/DeepSeek-V4-Pro": ModelEntry(
-        "DeepSeek V4 Pro · via Together", _AGENTIC, 128_000
+        "DeepSeek V4 Pro · via Together", _AGENTIC, 512_000
     ),
     "together:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": ModelEntry(
         "Llama 4 Maverick · via Together", _AGENTIC, 1_000_000
     ),
+    # fireworks.ai/models/fireworks/glm-5p2 lists "1040k tokens" (read 2026-09-08).
     "fireworks:accounts/fireworks/models/glm-5p2": ModelEntry(
-        "GLM-5.2 · via Fireworks", _AGENTIC, 128_000
+        "GLM-5.2 · via Fireworks", _AGENTIC, 1_040_000
     ),
     "fireworks:accounts/fireworks/models/kimi-k2p6": ModelEntry(
         "Kimi K2.6 · via Fireworks", _AGENTIC, 256_000
@@ -225,7 +232,10 @@ MATRIX: dict[str, ModelEntry] = {
     ),
     # OpenRouter slugs are lowercase `<lab>/<model>` (checked against their catalog
     # 2026-07-25); same labs as above, one key for all of them.
-    "openrouter:z-ai/glm-5.2": ModelEntry("GLM-5.2 · via OpenRouter", _AGENTIC, 128_000),
+    # openrouter.ai/z-ai/glm-5.2: 1,048,576 context, 163,840 completion (read 2026-09-08).
+    "openrouter:z-ai/glm-5.2": ModelEntry(
+        "GLM-5.2 · via OpenRouter", _AGENTIC, 1_048_576
+    ),
     "openrouter:moonshotai/kimi-k2.6": ModelEntry(
         "Kimi K2.6 · via OpenRouter", _AGENTIC, 256_000
     ),

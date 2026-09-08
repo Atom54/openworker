@@ -40,7 +40,15 @@ REPO = Path(__file__).resolve().parents[1]
         ("anthropic:claude-sonnet-5", 1_000_000),
         ("anthropic:claude-fable-5", 1_000_000),
         ("anthropic:claude-haiku-4-5", 200_000),
-        ("together:moonshotai/Kimi-K3", 1_000_000),
+        # Together /v1/models `context_length`, read 2026-09-08 (exact per model).
+        ("together:moonshotai/Kimi-K3", 1_048_576),
+        ("together:zai-org/GLM-5.2", 1_048_575),
+        ("together:deepseek-ai/DeepSeek-V4-Pro", 512_000),
+        # Vendor pages read 2026-09-08 (docs.z.ai "1M"; openrouter 1,048,576;
+        # fireworks "1040k").
+        ("zai:glm-5.2", 1_000_000),
+        ("openrouter:z-ai/glm-5.2", 1_048_576),
+        ("fireworks:accounts/fireworks/models/glm-5p2", 1_040_000),
     ],
 )
 def test_current_models_have_verified_windows(model, window):
