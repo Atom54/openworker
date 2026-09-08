@@ -194,8 +194,18 @@ def test_counter_resets_after_a_good_reply(tmp_path):
 
 def test_counter_resets_between_turns(tmp_path):
     engine, provider = _engine(tmp_path, [_cut(), _stop(), _cut(), _cut(), _stop()])
-    assert _run(engine, "one")[-1].data["status"] == "completed"
-    assert _run(engine, "two")[-1].data["status"] == "completed"
+
+    # Both turns inside ONE event loop, as every real caller does: the engine's stop
+    # event binds to the loop it first waits on, so a second asyncio.run() would race
+    # against a stale event and could end a turn early (a test artefact, not a bug).
+    async def _two_turns():
+        first = [ev async for ev in engine.run("one")]
+        second = [ev async for ev in engine.run("two")]
+        return first, second
+
+    first, second = asyncio.run(_two_turns())
+    assert first[-1].data["status"] == "completed"
+    assert second[-1].data["status"] == "completed"
     assert provider.calls == 5
 
 
