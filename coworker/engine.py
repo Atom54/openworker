@@ -12,6 +12,8 @@ engine says `needs_user`, the engine emits `PERMISSION_REQUIRED` and awaits the 
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 import json
 import time
@@ -39,6 +41,8 @@ from .providers.errors import friendly_model_error
 from .providers.openai_provider import looks_like_unparsed_tool_call
 from .tools import ToolRegistry
 
+
+logger = logging.getLogger(__name__)
 
 class ApprovalOutcome(str, Enum):
     ONCE = "once"
@@ -243,6 +247,7 @@ class TurnEngine:
         # Whether the latest assistant turn hit the output-token limit — decides which
         # diagnosis a mangled (unparseable-args) tool call gets answered with.
         self._turn_truncated = False
+        self._warned_context_fallback = False
         # Each pending steering message: (text, optional MessageSource sidecar dict).
         self._steering: list[tuple[str, Optional[dict[str, Any]]]] = []
         # tool_call.id → the standing rule that auto-allowed it ("tool → target"), so the
@@ -615,6 +620,19 @@ class TurnEngine:
             from .providers.matrix import model_context_windows
 
             cfg["context_window"] = model_context_windows().get(self.model)
+            if not cfg["context_window"] and not self._warned_context_fallback:
+                # OPE-170: an unlisted model compacts on the 128k guess, which for a
+                # 1M-window model means compacting at a tenth of the window and
+                # rebuilding the prompt cache each time. Say so once per engine.
+                self._warned_context_fallback = True
+                logger.warning(
+                    "model %s has no context window in the model matrix; assuming "
+                    "%d tokens (compaction at %d). Add a matrix row or set "
+                    "context_window in the compaction settings.",
+                    self.model,
+                    _compaction.DEFAULT_CONTEXT_WINDOW,
+                    _compaction.trigger_tokens(None),
+                )
         cfg.setdefault("threshold_pct", _compaction.DEFAULT_THRESHOLD_PCT)
         cfg.setdefault("cap_tokens", _compaction.DEFAULT_CAP_TOKENS)
         return cfg

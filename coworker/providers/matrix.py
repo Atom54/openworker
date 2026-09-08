@@ -107,8 +107,21 @@ MATRIX: dict[str, ModelEntry] = {
     "openai-codex:gpt-5.1-codex-mini": ModelEntry(
         "GPT-5.1 Codex Mini · ChatGPT plan", _AGENTIC, 400_000
     ),
-    # Fable 5 (2026-06-09) is GA; its Mythos 5 sibling is approved-orgs-only, so it
-    # stays out of a picker meant for the public.
+    # Claude 5 generation (platform.claude.com/docs/en/models/overview, read 2026-09-08):
+    # 1M context is the default and only size; 128K max output; adaptive thinking.
+    # Fable 5.1 (2026-09-01) is GA; its Mythos 5.1 sibling is approved-orgs-only, so it
+    # stays out of a picker meant for the public. Missing rows fell back to the 128k
+    # compaction guess and compacted at 102,400 tokens (OPE-170).
+    "anthropic:claude-fable-5-1": ModelEntry(
+        "Claude Fable 5.1 · Anthropic", _AGENTIC_VISION, 1_000_000
+    ),
+    "anthropic:claude-opus-5": ModelEntry(
+        "Claude Opus 5 · Anthropic", _AGENTIC_VISION, 1_000_000
+    ),
+    "anthropic:claude-sonnet-5": ModelEntry(
+        "Claude Sonnet 5 · Anthropic", _AGENTIC_VISION, 1_000_000
+    ),
+    # Fable 5 (2026-06-09) stays listed as the registry's recommended model.
     "anthropic:claude-fable-5": ModelEntry(
         "Claude Fable 5 · Anthropic", _AGENTIC_VISION, 1_000_000
     ),
