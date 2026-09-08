@@ -576,7 +576,13 @@ class TurnEngine:
             if not self._turn_truncated:
                 self._continuations = 0
             _sanitize_mangled_calls(turn)
-            self.messages.append(_assistant_message(turn, model=self.model))
+            self.messages.append(
+                _assistant_message(
+                    turn,
+                    model=self.model,
+                    effort_setting=self.model_settings.get("reasoning_effort"),
+                )
+            )
             payload: dict[str, Any] = {
                 "text": turn.text,
                 "tool_calls": [tc.name for tc in turn.tool_calls],
@@ -591,6 +597,9 @@ class TurnEngine:
             if turn.output_limit:
                 # The output ceiling the provider sent (OPE-177).
                 payload["max_output_tokens"] = turn.output_limit
+            effort_record = _effort_record(turn, self.model_settings.get("reasoning_effort"))
+            if effort_record:
+                payload["reasoning_effort"] = effort_record
             yield Event(EventType.ASSISTANT_MESSAGE, payload)
 
             if not turn.tool_calls:
@@ -2097,6 +2106,7 @@ class TurnEngine:
             "usage",
             "finish_reason",
             "max_output_tokens",
+            "reasoning_effort",
             "replay",
         )
         # Auto-compaction (OPE-27): everything before the boundary is represented by the
@@ -2200,7 +2210,24 @@ class TurnEngine:
         return out
 
 
-def _assistant_message(turn: AssistantTurn, model: Optional[str] = None) -> dict[str, Any]:
+def _effort_record(turn: AssistantTurn, setting: Optional[str]) -> Optional[dict[str, Any]]:
+    """What the run record says about reasoning effort for this reply (OPE-176): the
+    provider's own mapping when it reported one; otherwise, when a level was configured,
+    an explicit "requested but not reported" so the setting is never silently lost."""
+    if turn.effort:
+        return dict(turn.effort)
+    if setting:
+        return {
+            "requested": setting,
+            "effective": None,
+            "note": "provider did not report an effort parameter (no knob on this path)",
+        }
+    return None
+
+
+def _assistant_message(
+    turn: AssistantTurn, model: Optional[str] = None, effort_setting: Optional[str] = None
+) -> dict[str, Any]:
     message: dict[str, Any] = {
         "role": "assistant",
         "content": turn.text or "",
@@ -2225,6 +2252,11 @@ def _assistant_message(turn: AssistantTurn, model: Optional[str] = None) -> dict
         # `length` finish can be read against the limit that produced it. Display
         # sidecar like `usage`: stripped before every provider call.
         message["max_output_tokens"] = turn.output_limit
+    effort_record = _effort_record(turn, effort_setting)
+    if effort_record:
+        # The reasoning-effort mapping for this reply (OPE-176). Display sidecar like
+        # `usage`: stripped before every provider call.
+        message["reasoning_effort"] = effort_record
     if turn.reasoning:
         # Display-only thinking text — rendered by the GUI, stripped for every provider
         # (`_outbound_messages`); provider-private replay blocks go via `extras` instead.

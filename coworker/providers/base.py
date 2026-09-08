@@ -77,6 +77,11 @@ class AssistantTurn:
     # provider left it to the server. Persisted on the assistant message as the
     # `max_output_tokens` sidecar so a run record states its ceiling (OPE-177).
     output_limit: Optional[int] = None
+    # The reasoning-effort mapping used for this request (OPE-176):
+    # {requested, effective, param?, note?} — see providers/effort.py. None when no
+    # level was configured or the provider has no such knob. Persisted on the
+    # assistant message as the `reasoning_effort` sidecar.
+    effort: Optional[dict[str, Any]] = None
 
     @property
     def has_tool_calls(self) -> bool:

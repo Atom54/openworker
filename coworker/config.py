@@ -29,6 +29,11 @@ from .secrets import state_dir
 DEFAULT_ALLOWED_COMMANDS: list[str] = []
 
 
+# Reasoning-effort levels (OPE-176), mirroring Anthropic's vocabulary; each provider
+# maps a level to what its wire accepts (coworker/providers/effort.py).
+EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+
+
 @dataclass
 class Config:
     model: str = "gpt-5.6-sol"
@@ -40,6 +45,12 @@ class Config:
     # Bedrock 4,096). Anthropic recommends ~64,000 at high effort. Environment override:
     # COWORKER_MAX_OUTPUT_TOKENS. Explicit `build_engine(model_settings=...)` wins.
     max_output_tokens: Optional[int] = None
+    # How hard the model should think per reply: one of EFFORT_LEVELS. Unset = send no
+    # effort parameter at all (Anthropic's API default is high; Together's default for
+    # Kimi K3 is max), so existing requests are unchanged. Held constant for a whole
+    # session — changing it mid-conversation restarts the prompt cache. Environment
+    # override: COWORKER_REASONING_EFFORT.
+    reasoning_effort: Optional[str] = None
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)
     )
@@ -88,6 +99,7 @@ _FIELDS = {
     "mode",
     "max_iterations",
     "max_output_tokens",
+    "reasoning_effort",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -139,6 +151,21 @@ def workspace_allowed_commands(workspace: str | Path) -> list[str]:
 
 
 MAX_OUTPUT_TOKENS_ENV = "COWORKER_MAX_OUTPUT_TOKENS"
+REASONING_EFFORT_ENV = "COWORKER_REASONING_EFFORT"
+
+
+def _effort_level(value: Any, source: str) -> Optional[str]:
+    """`reasoning_effort` must be one of EFFORT_LEVELS (case-insensitive); empty = unset."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text not in EFFORT_LEVELS:
+        raise ValueError(
+            f"reasoning_effort must be one of {', '.join(EFFORT_LEVELS)}, got {value!r} ({source})"
+        )
+    return text
 
 
 def _positive_int(value: Any, source: str) -> Optional[int]:
@@ -186,4 +213,8 @@ def load_config(
         except ValueError:
             parsed = raw
         cfg.max_output_tokens = _positive_int(parsed, MAX_OUTPUT_TOKENS_ENV)
+    cfg.reasoning_effort = _effort_level(cfg.reasoning_effort, "config.toml")
+    raw_effort = os.environ.get(REASONING_EFFORT_ENV)
+    if raw_effort is not None and raw_effort.strip():
+        cfg.reasoning_effort = _effort_level(raw_effort, REASONING_EFFORT_ENV)
     return cfg

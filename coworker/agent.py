@@ -269,6 +269,9 @@ def build_engine(
     # An explicit `max_tokens` from the caller wins over the config value.
     if config.max_output_tokens is not None and "max_tokens" not in (model_settings or {}):
         model_settings = {**(model_settings or {}), "max_tokens": config.max_output_tokens}
+    # OPE-176: the reasoning-effort level takes the same route; providers translate it.
+    if config.reasoning_effort and "reasoning_effort" not in (model_settings or {}):
+        model_settings = {**(model_settings or {}), "reasoning_effort": config.reasoning_effort}
     executor = LocalExecutor(cwd=ws) if ws is not None else None
     todo = TodoList()
     context = AgentContext(

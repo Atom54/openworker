@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any, Optional
 
+from .effort import EffortPlan, mentions_effort, openai_compat_effort
 from .base import (
     AssistantTurn,
     ModelCapabilities,
@@ -100,6 +101,16 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
     msg = str(exc).lower()
     if _EFFORT_ERROR in msg and kwargs.get("reasoning_effort") != "none":
         return {**kwargs, "reasoning_effort": "none"}
+    if (
+        "reasoning_effort" in kwargs
+        and kwargs.get("reasoning_effort") != "none"
+        and ("reasoning_effort" in msg or "effort" in msg)
+    ):
+        # OPE-176: the endpoint has no effort knob under that name — drop it and run on
+        # the server default; the reply's `effort` record says it was rejected.
+        fixed = dict(kwargs)
+        fixed.pop("reasoning_effort")
+        return fixed
     if _MAX_TOKENS_ERROR in msg and "max_tokens" in kwargs:
         fixed = dict(kwargs)
         fixed["max_completion_tokens"] = fixed.pop("max_tokens")
@@ -118,6 +129,23 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
         fixed.pop("max_tokens")
         return fixed
     raise exc
+
+
+def _effort_record(plan: Optional[EffortPlan], kwargs: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The effort record for a reply, read from the kwargs that were finally sent (after
+    the param-fix retries may have dropped or pinned the parameter)."""
+    if plan is None:
+        return None
+    if not plan.params:
+        return plan.record()
+    sent = kwargs.get("reasoning_effort")
+    if sent is None:
+        return plan.without_param("endpoint rejected reasoning_effort; resent without it").record()
+    if sent != plan.effective:
+        return EffortPlan(
+            plan.requested, str(sent), {"reasoning_effort": sent}, f"endpoint accepted only {sent}"
+        ).record()
+    return plan.record()
 
 
 def _output_limit(kwargs: dict[str, Any]) -> Optional[int]:
@@ -193,6 +221,7 @@ class OpenAIProvider(ProviderClient):
         tools: Optional[list[dict[str, Any]]] = None,
         **settings: Any,
     ) -> AssistantTurn:
+        plan = self._effort_plan(model, settings)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": _strip_foreign_sidecars(messages),
@@ -201,6 +230,8 @@ class OpenAIProvider(ProviderClient):
         if tools:
             kwargs["tools"] = tools
         kwargs.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
+        if plan is not None and plan.params:
+            kwargs.update(plan.params)
         _pin_reasoning_effort(kwargs)
 
         client = self._ensure_client()
@@ -227,10 +258,34 @@ class OpenAIProvider(ProviderClient):
             reasoning=_delta_reasoning(message),
             usage=_usage_from(getattr(response, "usage", None)),
             output_limit=_output_limit(kwargs),
+            effort=self._note_effort(model, plan, kwargs),
         )
 
     def capabilities(self, model: str) -> ModelCapabilities:
         return capabilities_for(model)
+
+    # -- reasoning effort (OPE-176) ---------------------------------------------------
+
+    def _effort_plan(self, model: str, settings: dict[str, Any]) -> Optional[EffortPlan]:
+        """Pop the engine-level `reasoning_effort` setting (it must never ride the wire
+        unmapped) and translate it for this model; None when unset."""
+        level = settings.pop("reasoning_effort", None)
+        if not level:
+            return None
+        rejected = self.__dict__.setdefault("_effort_rejected", set())
+        if model in rejected:
+            return EffortPlan(
+                str(level), None, {}, "endpoint rejected reasoning_effort earlier in this run; not sent"
+            )
+        return openai_compat_effort(model, str(level))
+
+    def _note_effort(
+        self, model: str, plan: Optional[EffortPlan], kwargs: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        record = _effort_record(plan, kwargs)
+        if plan is not None and plan.params and kwargs.get("reasoning_effort") is None:
+            self.__dict__.setdefault("_effort_rejected", set()).add(model)
+        return record
 
     def stream(
         self,
@@ -240,6 +295,7 @@ class OpenAIProvider(ProviderClient):
         tools: Optional[list[dict[str, Any]]] = None,
         **settings: Any,
     ):
+        plan = self._effort_plan(model, settings)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": _strip_foreign_sidecars(messages),
@@ -252,6 +308,8 @@ class OpenAIProvider(ProviderClient):
         if tools:
             kwargs["tools"] = tools
         kwargs.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
+        if plan is not None and plan.params:
+            kwargs.update(plan.params)
         _pin_reasoning_effort(kwargs)
         client = self._ensure_client()
 
@@ -326,6 +384,7 @@ class OpenAIProvider(ProviderClient):
                 reasoning="".join(reasoning_parts) or None,
                 usage=usage,
                 output_limit=_output_limit(kwargs),
+                effort=self._note_effort(model, plan, kwargs),
             )
         )
 
