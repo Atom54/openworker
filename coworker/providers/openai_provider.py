@@ -120,6 +120,13 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
     raise exc
 
 
+def _output_limit(kwargs: dict[str, Any]) -> Optional[int]:
+    """The completion ceiling actually sent, after `_param_fix_retry` may have renamed
+    `max_tokens` to `max_completion_tokens` or dropped it (server default -> None)."""
+    value = kwargs.get("max_tokens", kwargs.get("max_completion_tokens"))
+    return int(value) if value else None
+
+
 def _usage_from(usage: Any) -> Optional[TokenUsage]:
     """chat.completions usage → normalized counts. `prompt_tokens` INCLUDES cached
     tokens, so the cached share is subtracted into `cache_read`; no write-side split
@@ -219,6 +226,7 @@ class OpenAIProvider(ProviderClient):
             raw=response,
             reasoning=_delta_reasoning(message),
             usage=_usage_from(getattr(response, "usage", None)),
+            output_limit=_output_limit(kwargs),
         )
 
     def capabilities(self, model: str) -> ModelCapabilities:
@@ -317,6 +325,7 @@ class OpenAIProvider(ProviderClient):
                 finish_reason=finish_reason,
                 reasoning="".join(reasoning_parts) or None,
                 usage=usage,
+                output_limit=_output_limit(kwargs),
             )
         )
 

@@ -71,6 +71,12 @@ class AssistantTurn:
     # Token counts for this round-trip, normalized across providers. None when the
     # backend didn't report usage (some compat servers) — never guessed.
     usage: Optional[TokenUsage] = None
+    # The per-reply output-token ceiling the provider actually sent on this request
+    # (`max_tokens` / `max_completion_tokens` / `max_output_tokens`), after any
+    # provider-side adjustment (Anthropic budget floor, OpenAI rename). None when the
+    # provider left it to the server. Persisted on the assistant message as the
+    # `max_output_tokens` sidecar so a run record states its ceiling (OPE-177).
+    output_limit: Optional[int] = None
 
     @property
     def has_tool_calls(self) -> bool:

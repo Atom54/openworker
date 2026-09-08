@@ -562,6 +562,9 @@ class TurnEngine:
             if turn.finish_reason:
                 # How the reply ended (OPE-173): `stop` / `tool_calls` / `length`.
                 payload["finish_reason"] = turn.finish_reason
+            if turn.output_limit:
+                # The output ceiling the provider sent (OPE-177).
+                payload["max_output_tokens"] = turn.output_limit
             yield Event(EventType.ASSISTANT_MESSAGE, payload)
 
             if not turn.tool_calls:
@@ -1985,10 +1988,19 @@ class TurnEngine:
         """
         # Strip the display-only sidecars — `source` (connector cards), `_display`
         # (e.g. filter-hidden counts), `ts` (append-time timestamps), `reasoning`
-        # (thinking text), `usage` (token counts), and `finish_reason` (how the reply
-        # ended) — copying only messages that carry one. Whole `notice` messages
-        # (error/interrupted/model-switch markers) are display-only too: dropped entirely.
-        _SIDECARS = ("source", "_display", "ts", "reasoning", "usage", "finish_reason")
+        # (thinking text), `usage` (token counts), `finish_reason` (how the reply ended)
+        # and `max_output_tokens` (the ceiling sent) — copying only messages that carry
+        # one. Whole `notice` messages (error/interrupted/model-switch markers) are
+        # display-only too: dropped entirely.
+        _SIDECARS = (
+            "source",
+            "_display",
+            "ts",
+            "reasoning",
+            "usage",
+            "finish_reason",
+            "max_output_tokens",
+        )
         # Auto-compaction (OPE-27): everything before the boundary is represented by the
         # compacted block. Outbound-only — the canonical history stays intact — and the
         # block+tail are byte-stable between turns, so prompt caching keeps working.
@@ -2107,6 +2119,11 @@ def _assistant_message(turn: AssistantTurn, model: Optional[str] = None) -> dict
         # every provider call (`_outbound_messages`). The provider's raw value, where
         # it differs, lives in that provider's sidecar (e.g. `_anthropic.stop_reason`).
         message["finish_reason"] = turn.finish_reason
+    if turn.output_limit:
+        # The per-reply output ceiling the provider actually sent (OPE-177), so a
+        # `length` finish can be read against the limit that produced it. Display
+        # sidecar like `usage`: stripped before every provider call.
+        message["max_output_tokens"] = turn.output_limit
     if turn.reasoning:
         # Display-only thinking text — rendered by the GUI, stripped for every provider
         # (`_outbound_messages`); provider-private replay blocks go via `extras` instead.

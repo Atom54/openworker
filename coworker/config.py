@@ -9,6 +9,8 @@ workspace path. Other permission grants remain global-only.
 
 from __future__ import annotations
 
+import os
+
 try:
     import tomllib  # stdlib since 3.11
 except ModuleNotFoundError:  # 3.10, the floor requires-python declares
@@ -32,6 +34,12 @@ class Config:
     model: str = "gpt-5.6-sol"
     mode: str = "interactive"
     max_iterations: int = 150
+    # Per-reply output-token ceiling sent to the provider as `max_tokens` (thinking,
+    # visible text and tool-call arguments all count against it). Unset = each
+    # provider's own default (32,000 for Anthropic and OpenAI-compatible endpoints;
+    # Bedrock 4,096). Anthropic recommends ~64,000 at high effort. Environment override:
+    # COWORKER_MAX_OUTPUT_TOKENS. Explicit `build_engine(model_settings=...)` wins.
+    max_output_tokens: Optional[int] = None
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)
     )
@@ -79,6 +87,7 @@ _FIELDS = {
     "model",
     "mode",
     "max_iterations",
+    "max_output_tokens",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -129,6 +138,21 @@ def workspace_allowed_commands(workspace: str | Path) -> list[str]:
     return list(dict.fromkeys(v.strip() for v in value if isinstance(v, str) and v.strip()))
 
 
+MAX_OUTPUT_TOKENS_ENV = "COWORKER_MAX_OUTPUT_TOKENS"
+
+
+def _positive_int(value: Any, source: str) -> Optional[int]:
+    """`max_output_tokens` must be a positive integer (bools are ints in Python and
+    TOML `true` would otherwise pass as 1)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(
+            f"max_output_tokens must be a positive integer, got {value!r} ({source})"
+        )
+    return value
+
+
 def load_config(
     workspace: Optional[str | Path] = None,
     *,
@@ -154,4 +178,12 @@ def load_config(
                         [*cfg.allowed_commands, *workspace_allowed_commands(workspace)]
                     )
                 )
+    cfg.max_output_tokens = _positive_int(cfg.max_output_tokens, "config.toml")
+    raw = (os.environ.get(MAX_OUTPUT_TOKENS_ENV) or "").strip()
+    if raw:
+        try:
+            parsed: Any = int(raw)
+        except ValueError:
+            parsed = raw
+        cfg.max_output_tokens = _positive_int(parsed, MAX_OUTPUT_TOKENS_ENV)
     return cfg
