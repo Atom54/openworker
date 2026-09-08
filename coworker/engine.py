@@ -503,8 +503,9 @@ class TurnEngine:
                 yield Event(EventType.COMPACTING, {})
                 notice = await self._compact_now()
             if notice:
-                self._append_notice("compacted", notice)
-                yield Event(EventType.COMPACTED, {"text": notice})
+                record = self._compaction_record()
+                self._append_notice("compacted", notice, compaction=record)
+                yield Event(EventType.COMPACTED, {"text": notice, "compaction": record})
 
             turn: Optional[AssistantTurn] = None
             streamed: list[str] = []
@@ -541,8 +542,11 @@ class TurnEngine:
                     yield Event(EventType.COMPACTING, {})
                     notice = await self._compact_now(force=True)
                     if notice:
-                        self._append_notice("compacted", notice)
-                        yield Event(EventType.COMPACTED, {"text": notice})
+                        record = self._compaction_record()
+                        self._append_notice("compacted", notice, compaction=record)
+                        yield Event(
+                            EventType.COMPACTED, {"text": notice, "compaction": record}
+                        )
                         continue
                 # Same contract as the stop path below: the partial the user watched
                 # arrive survives the failure.
@@ -740,6 +744,16 @@ class TurnEngine:
             threshold_pct=float(cfg["threshold_pct"]),
             cap_tokens=int(cfg["cap_tokens"]),
         )
+
+    def _compaction_record(self) -> Optional[dict[str, Any]]:
+        """The compaction that just happened, as persisted on the `compacted` notice and
+        carried on the COMPACTED event (OPE-170 problem 2): summary text, working state,
+        the boundary into the canonical transcript, the summarizer model, and whether it
+        was the no-summary trim. Without it a saved session only showed THAT compaction
+        happened, not what was kept — the app's session record keeps only the latest
+        state, and exported trajectories / run records had nothing at all."""
+        state = self.compaction_state
+        return state.as_dict() if state is not None else None
 
     async def _compact_now(self, *, force: bool = False) -> Optional[str]:
         """Run the compaction policy. Callers gate on `_compaction_due()` (or `force`,
