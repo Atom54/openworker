@@ -30,6 +30,22 @@ from .events import Event, EventType
 # §8.4 retry guard: the reviewer pauses for the rest of the turn after this many denials
 # IN A ROW (2→5 + streak semantics, owner ruling 2026-08-24 — a cumulative 2 silently
 # downgraded long agentic turns to hand-approval after one over-strict pair).
+# OPE-171: a reply cut off at the output-token limit (finish_reason "length") that
+# carries no tool call is not an answer — typically thinking consumed the whole budget
+# and nothing else came back. The engine nudges the model to act instead of ending the
+# turn as "completed", at most this many times in a row; then the turn ends as
+# "truncated" so callers can tell "finished" from "gave up".
+MAX_TRUNCATION_CONTINUATIONS = 2
+TRUNCATION_NUDGE = (
+    "Your previous reply hit the output-token limit before you took an action or "
+    "finished. Do not repeat the long reasoning. Decide the next concrete step and "
+    "call a tool now, or give the final answer briefly."
+)
+# What the provider sees in place of the cut-off reply: its partial thinking block has
+# no signature (Anthropic rejects it on replay) and its content is empty or a fragment;
+# the transcript keeps the original, the outbound view sends this.
+TRUNCATION_STUB = "(reply cut off at the output-token limit before any action)"
+
 _REVIEWER_TRIP = 5
 _REVIEWER_PAUSED_TEXT = (
     "Auto-approve is paused for the rest of this turn — the reviewer blocked "
@@ -247,6 +263,8 @@ class TurnEngine:
         # Whether the latest assistant turn hit the output-token limit — decides which
         # diagnosis a mangled (unparseable-args) tool call gets answered with.
         self._turn_truncated = False
+        # Consecutive length-truncated, action-free replies nudged this turn (OPE-171).
+        self._continuations = 0
         self._warned_context_fallback = False
         # Each pending steering message: (text, optional MessageSource sidecar dict).
         self._steering: list[tuple[str, Optional[dict[str, Any]]]] = []
@@ -466,6 +484,7 @@ class TurnEngine:
 
     async def _loop(self) -> AsyncIterator[Event]:
         iterations = 0
+        self._continuations = 0
         while True:
             if iterations >= self.max_iterations:
                 yield Event(
@@ -554,6 +573,8 @@ class TurnEngine:
                 self._last_context_tokens = turn.usage.context_tokens
 
             self._turn_truncated = turn.finish_reason == "length"
+            if not self._turn_truncated:
+                self._continuations = 0
             _sanitize_mangled_calls(turn)
             self.messages.append(_assistant_message(turn, model=self.model))
             payload: dict[str, Any] = {
@@ -576,6 +597,64 @@ class TurnEngine:
                 if self._steering:
                     self._inject_steering()
                     continue
+                if self._turn_truncated:
+                    # OPE-171: cut off at the output limit with nothing actionable. The
+                    # reply just persisted is marked for stub replay (see
+                    # `_outbound_messages`); the model is asked to act, and the turn
+                    # goes round again — unless it has already happened too often.
+                    cut = self.messages[-1]
+                    if cut.get("role") == "assistant":
+                        cut["replay"] = "stub"
+                    if self._continuations < MAX_TRUNCATION_CONTINUATIONS:
+                        self._continuations += 1
+                        self.messages.append(
+                            {
+                                "role": "user",
+                                "content": TRUNCATION_NUDGE,
+                                "ts": time.time(),
+                                "_display": {
+                                    "kind": "continuation",
+                                    "reason": "length",
+                                    "attempt": self._continuations,
+                                },
+                            }
+                        )
+                        yield Event(
+                            EventType.CONTINUATION,
+                            {
+                                "reason": "length",
+                                "attempt": self._continuations,
+                                "remaining": MAX_TRUNCATION_CONTINUATIONS
+                                - self._continuations,
+                                "iterations": iterations,
+                                "text": (
+                                    "Reply cut off at the output-token limit with no "
+                                    f"action; asking the model to continue "
+                                    f"({self._continuations} of "
+                                    f"{MAX_TRUNCATION_CONTINUATIONS})."
+                                ),
+                            },
+                        )
+                        continue
+                    text = (
+                        f"{self.model}'s reply was cut off at the output-token limit with "
+                        f"no action {self._continuations + 1} times in a row, so the turn "
+                        "was stopped rather than reported as complete. Raise "
+                        "max_output_tokens, lower the reasoning effort, or retry."
+                    )
+                    self._append_notice(
+                        "truncated", text, continuations=self._continuations
+                    )
+                    yield Event(
+                        EventType.TURN_END,
+                        {
+                            "status": "truncated",
+                            "iterations": iterations,
+                            "continuations": self._continuations,
+                            "text": text,
+                        },
+                    )
+                    return
                 # The model tried to call a tool and the syntax never parsed — salvage already
                 # had its go. Ending as "completed" here would present a half-written call as
                 # the answer, which is indistinguishable from the model deciding it was done;
@@ -2018,6 +2097,7 @@ class TurnEngine:
             "usage",
             "finish_reason",
             "max_output_tokens",
+            "replay",
         )
         # Auto-compaction (OPE-27): everything before the boundary is represented by the
         # compacted block. Outbound-only — the canonical history stays intact — and the
@@ -2027,7 +2107,10 @@ class TurnEngine:
         )
         out = [
             (
-                {k: v for k, v in msg.items() if k not in _SIDECARS}
+                # OPE-171: a length-truncated, action-free reply is replayed as a stub.
+                {"role": "assistant", "content": TRUNCATION_STUB}
+                if msg.get("replay") == "stub"
+                else {k: v for k, v in msg.items() if k not in _SIDECARS}
                 if any(s in msg for s in _SIDECARS)
                 else msg
             )
