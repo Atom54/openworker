@@ -604,6 +604,8 @@ class TurnEngine:
             effort_record = _effort_record(turn, self.model_settings.get("reasoning_effort"))
             if effort_record:
                 payload["reasoning_effort"] = effort_record
+            if turn.served_by:
+                payload["served_by"] = turn.served_by
             yield Event(EventType.ASSISTANT_MESSAGE, payload)
 
             if not turn.tool_calls:
@@ -2121,6 +2123,7 @@ class TurnEngine:
             "finish_reason",
             "max_output_tokens",
             "reasoning_effort",
+            "served_by",
             "replay",
         )
         # Auto-compaction (OPE-27): everything before the boundary is represented by the
@@ -2271,6 +2274,9 @@ def _assistant_message(
         # The reasoning-effort mapping for this reply (OPE-176). Display sidecar like
         # `usage`: stripped before every provider call.
         message["reasoning_effort"] = effort_record
+    if turn.served_by:
+        # The upstream host a router reported for this reply (display sidecar).
+        message["served_by"] = turn.served_by
     if turn.reasoning:
         # Display-only thinking text — rendered by the GUI, stripped for every provider
         # (`_outbound_messages`); provider-private replay blocks go via `extras` instead.

@@ -148,6 +148,13 @@ def _effort_record(plan: Optional[EffortPlan], kwargs: dict[str, Any]) -> Option
     return plan.record()
 
 
+def _served_by(obj: Any) -> Optional[str]:
+    """OpenRouter (and compatible routers) put the upstream host's name in a top-level
+    `provider` field on responses and stream chunks; the OpenAI SDK keeps unknown fields."""
+    value = getattr(obj, "provider", None)
+    return str(value) if isinstance(value, str) and value else None
+
+
 def _output_limit(kwargs: dict[str, Any]) -> Optional[int]:
     """The completion ceiling actually sent, after `_param_fix_retry` may have renamed
     `max_tokens` to `max_completion_tokens` or dropped it (server default -> None)."""
@@ -259,6 +266,7 @@ class OpenAIProvider(ProviderClient):
             usage=_usage_from(getattr(response, "usage", None)),
             output_limit=_output_limit(kwargs),
             effort=self._note_effort(model, plan, kwargs),
+            served_by=_served_by(response),
         )
 
     def capabilities(self, model: str) -> ModelCapabilities:
@@ -318,6 +326,7 @@ class OpenAIProvider(ProviderClient):
         tool_accum: dict[int, dict[str, str]] = {}
         finish_reason = None
         usage: Optional[TokenUsage] = None
+        served: Optional[str] = None
 
         # Up to three param-fix retries: effort, the max_tokens rename, and the
         # max_tokens over-limit drop can ALL need fixing on one call.
@@ -330,6 +339,7 @@ class OpenAIProvider(ProviderClient):
         else:
             chunks = client.chat.completions.create(**kwargs)
         for chunk in chunks:
+            served = _served_by(chunk) or served
             chunk_usage = _usage_from(getattr(chunk, "usage", None))
             if chunk_usage is not None:
                 usage = chunk_usage
@@ -385,6 +395,7 @@ class OpenAIProvider(ProviderClient):
                 usage=usage,
                 output_limit=_output_limit(kwargs),
                 effort=self._note_effort(model, plan, kwargs),
+                served_by=served,
             )
         )
 

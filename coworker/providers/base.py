@@ -82,6 +82,10 @@ class AssistantTurn:
     # level was configured or the provider has no such knob. Persisted on the
     # assistant message as the `reasoning_effort` sidecar.
     effort: Optional[dict[str, Any]] = None
+    # The upstream host that served this reply, when a router names it (OpenRouter's
+    # top-level `provider`, e.g. "Together"). Persisted as the `served_by` sidecar so a
+    # run pinned to one host can prove the pin held on every reply.
+    served_by: Optional[str] = None
 
     @property
     def has_tool_calls(self) -> bool:
