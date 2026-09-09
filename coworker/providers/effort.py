@@ -146,6 +146,7 @@ def anthropic_effort(model: str, level: str, *, budget_mode: bool) -> EffortPlan
 _OPENAI_COMPAT: dict[str, tuple[str, ...]] = {
     # Kimi K3: Moonshot and Together document reasoning_effort low / high / max.
     "moonshotai/Kimi-K3": ("low", "high", "max"),
+    "moonshotai/kimi-k3": ("low", "high", "max"),  # OpenRouter's lowercase slug
     "kimi-k3": ("low", "high", "max"),
 }
 _OPENAI_DEFAULT = ("low", "medium", "high")

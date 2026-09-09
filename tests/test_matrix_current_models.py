@@ -42,6 +42,7 @@ REPO = Path(__file__).resolve().parents[1]
         ("anthropic:claude-haiku-4-5", 200_000),
         # Together /v1/models `context_length`, read 2026-09-08 (exact per model).
         ("together:moonshotai/Kimi-K3", 1_048_576),
+        ("openrouter:moonshotai/kimi-k3", 1_048_576),  # openrouter.ai models API, 2026-09-09
         ("together:zai-org/GLM-5.2", 1_048_575),
         ("together:deepseek-ai/DeepSeek-V4-Pro", 512_000),
         # Vendor pages read 2026-09-08 (docs.z.ai "1M"; openrouter 1,048,576;

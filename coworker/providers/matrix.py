@@ -236,6 +236,16 @@ MATRIX: dict[str, ModelEntry] = {
     "openrouter:z-ai/glm-5.2": ModelEntry(
         "GLM-5.2 · via OpenRouter", _AGENTIC, 1_048_576
     ),
+    # Kimi K3 via OpenRouter (openrouter.ai/api/v1/models, read 2026-09-09: 1,048,576
+    # context; served by Together among others — OpenRouter's `provider` routing can pin
+    # it). Same capabilities as the Together row.
+    "openrouter:moonshotai/kimi-k3": ModelEntry(
+        "Kimi K3 · via OpenRouter",
+        ModelCapabilities(
+            tools=True, vision=True, parallel_tool_calls=True, streaming=True
+        ),
+        1_048_576,
+    ),
     "openrouter:moonshotai/kimi-k2.6": ModelEntry(
         "Kimi K2.6 · via OpenRouter", _AGENTIC, 256_000
     ),
