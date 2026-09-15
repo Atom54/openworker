@@ -51,6 +51,16 @@ class Config:
     # session — changing it mid-conversation restarts the prompt cache. Environment
     # override: COWORKER_REASONING_EFFORT.
     reasoning_effort: Optional[str] = None
+    # OPE-186: bound every tool result before it enters the conversation. A result whose
+    # serialised form exceeds this many bytes is stored as head + marker + tail, with the
+    # full text in a spill file the model can read. Unset = 10,000;
+    # 0 = off. Environment override: COWORKER_TOOL_RESULT_MAX_BYTES.
+    tool_result_max_bytes: Optional[int] = None
+    # OPE-186 change 3: cap on the auto-compaction trigger, in tokens. The engine compacts
+    # at min(80% of the model's window, this cap); the built-in cap is 250,000, which on a
+    # 1M-window model fired once in 445 long sessions. Lower it (e.g. 60000) to
+    # summarise long sessions earlier. Environment override: COWORKER_COMPACTION_CAP_TOKENS.
+    compaction_cap_tokens: Optional[int] = None
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)
     )
@@ -100,6 +110,8 @@ _FIELDS = {
     "max_iterations",
     "max_output_tokens",
     "reasoning_effort",
+    "tool_result_max_bytes",
+    "compaction_cap_tokens",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -152,6 +164,19 @@ def workspace_allowed_commands(workspace: str | Path) -> list[str]:
 
 MAX_OUTPUT_TOKENS_ENV = "COWORKER_MAX_OUTPUT_TOKENS"
 REASONING_EFFORT_ENV = "COWORKER_REASONING_EFFORT"
+TOOL_RESULT_MAX_BYTES_ENV = "COWORKER_TOOL_RESULT_MAX_BYTES"
+COMPACTION_CAP_TOKENS_ENV = "COWORKER_COMPACTION_CAP_TOKENS"
+
+
+def _nonnegative_int(value: Any, source: str) -> Optional[int]:
+    """`tool_result_max_bytes`: an integer >= 0 (0 turns bounding off); bools rejected."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f"tool_result_max_bytes must be an integer >= 0, got {value!r} ({source})"
+        )
+    return value
 
 
 def _effort_level(value: Any, source: str) -> Optional[str]:
@@ -217,4 +242,31 @@ def load_config(
     raw_effort = os.environ.get(REASONING_EFFORT_ENV)
     if raw_effort is not None and raw_effort.strip():
         cfg.reasoning_effort = _effort_level(raw_effort, REASONING_EFFORT_ENV)
+    cfg.tool_result_max_bytes = _nonnegative_int(cfg.tool_result_max_bytes, "config.toml")
+    raw_cap = (os.environ.get(TOOL_RESULT_MAX_BYTES_ENV) or "").strip()
+    if raw_cap:
+        try:
+            parsed_cap: Any = int(raw_cap)
+        except ValueError:
+            parsed_cap = raw_cap
+        cfg.tool_result_max_bytes = _nonnegative_int(parsed_cap, TOOL_RESULT_MAX_BYTES_ENV)
+    if cfg.compaction_cap_tokens is not None and (
+        isinstance(cfg.compaction_cap_tokens, bool)
+        or not isinstance(cfg.compaction_cap_tokens, int)
+        or cfg.compaction_cap_tokens <= 0
+    ):
+        raise ValueError(
+            f"compaction_cap_tokens must be a positive integer, got {cfg.compaction_cap_tokens!r} (config.toml)"
+        )
+    raw_comp = (os.environ.get(COMPACTION_CAP_TOKENS_ENV) or "").strip()
+    if raw_comp:
+        try:
+            parsed_comp = int(raw_comp)
+        except ValueError:
+            parsed_comp = 0
+        if parsed_comp <= 0:
+            raise ValueError(
+                f"compaction_cap_tokens must be a positive integer, got {raw_comp!r} ({COMPACTION_CAP_TOKENS_ENV})"
+            )
+        cfg.compaction_cap_tokens = parsed_comp
     return cfg

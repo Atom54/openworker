@@ -19,12 +19,14 @@ import json
 import time
 from dataclasses import dataclass, replace
 from enum import Enum
+from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from . import compaction as _compaction
 from . import provenance
 from . import session_facts
 from . import toolchain as _toolchain
+from . import toolresult
 from .events import Event, EventType
 
 # §8.4 retry guard: the reviewer pauses for the rest of the turn after this many denials
@@ -143,6 +145,11 @@ class TurnEngine:
         # Called (thread-safe, best-effort) when the user stops the turn — e.g. the
         # executor's kill for a running shell command.
         interrupt_hooks: Optional[list[Callable[[], None]]] = None,
+        # OPE-186 change 1: bound every tool result before it enters the conversation
+        # (head + marker + tail; full text in a spill file). None = the module default
+        # (10,000 bytes), 0 = off. See coworker/toolresult.py.
+        tool_result_max_bytes: Optional[int] = None,
+        tool_result_spill_dir: Optional[Path] = None,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -251,6 +258,14 @@ class TurnEngine:
         # the card and in the reviewer's request. Runtime-only, like `_ask_replies`: a
         # restart costs context (more cards), never correctness.
         self._agent_files = provenance.SessionFiles(permissions.workspace_root)
+        self._tool_result_max_bytes = (
+            toolresult.DEFAULT_TOOL_RESULT_MAX_BYTES
+            if tool_result_max_bytes is None
+            else int(tool_result_max_bytes)
+        )
+        self._tool_result_spill_dir = (
+            Path(tool_result_spill_dir) if tool_result_spill_dir is not None else None
+        )
         # Completed tool calls so far, so a fact can say how many steps back the write was.
         self._step = 0
         self._last_context_tokens: Optional[int] = None
@@ -817,6 +832,25 @@ class TurnEngine:
                 except Exception:
                     continue
         if state is not None:
+            # OPE-186 change 3: keep the compacted turns readable. The verbatim transcript
+            # up to the boundary goes to a file next to the spilled tool results, and the
+            # compacted block tells the model where it is, so a detail the summary dropped
+            # costs one read instead of being lost.
+            if self._tool_result_spill_dir is not None:
+                try:
+                    self._tool_result_spill_dir.mkdir(parents=True, exist_ok=True)
+                    path = (
+                        self._tool_result_spill_dir
+                        / f"compacted-transcript-upto-{state.boundary_index:04d}.md"
+                    )
+                    path.write_text(
+                        _compaction.render_transcript(self.messages, state.boundary_index),
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    state.transcript_path = str(path)
+                except OSError:
+                    pass
             self.compaction_state = state
             self._last_context_tokens = None  # stale once the outbound view shrank
             return "Context compacted — earlier turns were summarized"
@@ -1604,6 +1638,15 @@ class TurnEngine:
                 **({"approval_note": origin["note"]} if origin.get("note") else {}),
                 **({"approval_grant": origin["grant"]} if origin.get("grant") else {}),
             }
+        # OPE-186 change 1: what the model sees (and re-reads on every later turn) is
+        # bounded here, once, for every tool. Provenance above recorded the full result.
+        result = toolresult.bound_tool_result(
+            result,
+            max_bytes=self._tool_result_max_bytes,
+            spill_dir=self._tool_result_spill_dir,
+            step=self._step,
+            tool_name=tool_call.name,
+        )
         message = _tool_result_message(tool_call, result)
         if display:
             message["_display"] = display

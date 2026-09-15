@@ -188,6 +188,14 @@ def _skill_dirs(workspace: Optional[Path]) -> list[Path]:
     return dirs
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def build_engine(
     *,
     agent: Agent,
@@ -199,6 +207,11 @@ def build_engine(
     allowed_commands: Optional[list[str]] = None,
     max_iterations: Optional[int] = None,
     model_settings: Optional[dict[str, Any]] = None,
+    # OPE-186: explicit tool-result byte cap (None = config, then the 10,000 default;
+    # 0 = off) and where bounded results' full text is spilled (None = the session's
+    # scratch root if there is one, else a per-process temp directory).
+    tool_result_max_bytes: Optional[int] = None,
+    tool_result_spill_dir: Optional[str | Path] = None,
     memory_store: Optional[MemoryStore] = None,
     # Twentieth pass: the project key memory loads/saves under. Defaults to the
     # workspace path; the manager passes the resolved key (binding > git > path)
@@ -261,6 +274,30 @@ def build_engine(
         root_list = [RootDir(path=ws, writable=True)]
     else:
         root_list = []
+
+    # OPE-186: bounded tool results keep their full text in a spill file the model can
+    # read, and the compaction transcript is written there too. Prefer the session's
+    # scratch root (already one of the agent's folders). Otherwise the folder joins the
+    # session's directories read-only, BEFORE the tools are built, so read_file can open
+    # it (2026-09-14: the first trial spilled under the run's log folder and read_file
+    # answered "path escapes the session's directories"). The workspace itself is never
+    # written to, so a repository or task tree stays clean.
+    if tool_result_spill_dir is not None:
+        spill_dir: Optional[Path] = Path(tool_result_spill_dir).expanduser().resolve()
+    else:
+        scratch = next((r.path for r in root_list if r.label == "scratch"), None)
+        if scratch is not None:
+            spill_dir = Path(scratch) / "tool-output"
+        else:
+            import os
+            import tempfile
+
+            spill_dir = (
+                Path(tempfile.gettempdir()) / "openworker" / f"tool-output-{os.getpid()}"
+            ).resolve()
+    # Registered, not created: the folder appears on disk only when something is spilled.
+    if root_list and not any(_is_within(spill_dir, r.path) for r in root_list):
+        root_list.append(RootDir(path=spill_dir, writable=False, label="tool-output"))
 
     workspace_trusted = bool(ws and WorkspaceTrustStore().is_trusted(ws))
     config = load_config(ws, workspace_trusted=workspace_trusted)
@@ -534,6 +571,12 @@ def build_engine(
                 )
         return "\n\n".join(parts)
 
+    cap = (
+        tool_result_max_bytes
+        if tool_result_max_bytes is not None
+        else config.tool_result_max_bytes
+    )
+
     engine = TurnEngine(
         provider=provider,
         registry=registry,
@@ -541,6 +584,8 @@ def build_engine(
         model=model,
         instructions=instructions,
         approver=approver,
+        tool_result_max_bytes=cap,
+        tool_result_spill_dir=spill_dir,
         # Stop kills the in-flight foreground shell command, not just the loop.
         interrupt_hooks=[executor.interrupt_now] if executor is not None else None,
         max_iterations=(
@@ -557,6 +602,11 @@ def build_engine(
         team_approver=team_approver,
         items_approver=items_approver,
     )
+    # OPE-186 change 3: a configured compaction cap makes the summariser fire earlier
+    # than the built-in 250,000-token cap. The window still comes from the model matrix.
+    if config.compaction_cap_tokens:
+        _cap_tokens = int(config.compaction_cap_tokens)
+        engine.compaction_settings = lambda: {"cap_tokens": _cap_tokens}
     engine.executor = executor  # type: ignore[attr-defined]
     engine.todo = todo  # type: ignore[attr-defined]
     engine.agent_name = agent.name  # type: ignore[attr-defined]
