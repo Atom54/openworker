@@ -61,6 +61,11 @@ class Config:
     # 1M-window model fired once in 445 long sessions. Lower it (e.g. 60000) to
     # summarise long sessions earlier. Environment override: COWORKER_COMPACTION_CAP_TOKENS.
     compaction_cap_tokens: Optional[int] = None
+    # OPE-189: output ceiling for the summariser call, in tokens. Unset = 16,000. On a
+    # reasoning model the budget is shared with the model's thinking, so a low value means
+    # the summary itself never gets written. Environment override:
+    # COWORKER_COMPACTION_SUMMARY_MAX_TOKENS.
+    compaction_summary_max_tokens: Optional[int] = None
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)
     )
@@ -112,6 +117,7 @@ _FIELDS = {
     "reasoning_effort",
     "tool_result_max_bytes",
     "compaction_cap_tokens",
+    "compaction_summary_max_tokens",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -166,6 +172,7 @@ MAX_OUTPUT_TOKENS_ENV = "COWORKER_MAX_OUTPUT_TOKENS"
 REASONING_EFFORT_ENV = "COWORKER_REASONING_EFFORT"
 TOOL_RESULT_MAX_BYTES_ENV = "COWORKER_TOOL_RESULT_MAX_BYTES"
 COMPACTION_CAP_TOKENS_ENV = "COWORKER_COMPACTION_CAP_TOKENS"
+COMPACTION_SUMMARY_MAX_TOKENS_ENV = "COWORKER_COMPACTION_SUMMARY_MAX_TOKENS"
 
 
 def _nonnegative_int(value: Any, source: str) -> Optional[int]:
@@ -269,4 +276,33 @@ def load_config(
                 f"compaction_cap_tokens must be a positive integer, got {raw_comp!r} ({COMPACTION_CAP_TOKENS_ENV})"
             )
         cfg.compaction_cap_tokens = parsed_comp
+    cfg.compaction_summary_max_tokens = _positive_int_setting(
+        cfg.compaction_summary_max_tokens,
+        "compaction_summary_max_tokens",
+        COMPACTION_SUMMARY_MAX_TOKENS_ENV,
+    )
     return cfg
+
+
+def _positive_int_setting(
+    value: Any, name: str, env_var: str
+) -> Optional[int]:
+    """A config.toml value overridden by `env_var`; both must be positive integers."""
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+    ):
+        raise ValueError(
+            f"{name} must be a positive integer, got {value!r} (config.toml)"
+        )
+    raw = (os.environ.get(env_var) or "").strip()
+    if not raw:
+        return value
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 0
+    if parsed <= 0:
+        raise ValueError(
+            f"{name} must be a positive integer, got {raw!r} ({env_var})"
+        )
+    return parsed

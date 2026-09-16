@@ -134,6 +134,17 @@ MATRIX: dict[str, ModelEntry] = {
     "anthropic:claude-haiku-4-5": ModelEntry(
         "Claude Haiku 4.5 · Anthropic", _AGENTIC_VISION, 200_000
     ),
+    # Claude 4.5/4.6: kept for comparability with published evaluations of those
+    # models, so OpenWorker can be measured against them on the same model.
+    "anthropic:claude-opus-4-6": ModelEntry(
+        "Claude Opus 4.6 · Anthropic", _AGENTIC_VISION, 200_000
+    ),
+    "anthropic:claude-opus-4-5": ModelEntry(
+        "Claude Opus 4.5 · Anthropic", _AGENTIC_VISION, 200_000
+    ),
+    "anthropic:claude-sonnet-4-5": ModelEntry(
+        "Claude Sonnet 4.5 · Anthropic", _AGENTIC_VISION, 200_000
+    ),
     # Gemini 3 (thought signatures required in tool loops — carried via the `_gemini`
     # message sidecar, see gemini_provider.py; ids from the vendor catalog 2026-07-22).
     "gemini:gemini-3.1-pro-preview": ModelEntry(

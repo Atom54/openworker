@@ -604,9 +604,17 @@ def build_engine(
     )
     # OPE-186 change 3: a configured compaction cap makes the summariser fire earlier
     # than the built-in 250,000-token cap. The window still comes from the model matrix.
+    # OPE-189: the summariser's own output ceiling rides the same settings dict; unset
+    # keys fall back to the engine's defaults, so setting either one alone is safe.
+    _compaction_overrides: dict[str, Any] = {}
     if config.compaction_cap_tokens:
-        _cap_tokens = int(config.compaction_cap_tokens)
-        engine.compaction_settings = lambda: {"cap_tokens": _cap_tokens}
+        _compaction_overrides["cap_tokens"] = int(config.compaction_cap_tokens)
+    if config.compaction_summary_max_tokens:
+        _compaction_overrides["summary_max_tokens"] = int(
+            config.compaction_summary_max_tokens
+        )
+    if _compaction_overrides:
+        engine.compaction_settings = lambda: dict(_compaction_overrides)
     engine.executor = executor  # type: ignore[attr-defined]
     engine.todo = todo  # type: ignore[attr-defined]
     engine.agent_name = agent.name  # type: ignore[attr-defined]
