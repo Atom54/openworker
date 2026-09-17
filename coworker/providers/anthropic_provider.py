@@ -274,43 +274,6 @@ def _user_blocks(content: Any) -> list[dict[str, Any]]:
     return blocks
 
 
-def _relocate_ephemeral_note(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """OPE-192: the engine sends its per-turn `<system-context>` note as a trailing user
-    message (right for the OpenAI-compatible wire, where the prefix through the last tool
-    result then stays byte-identical). On Anthropic that shape is WORSE: the note folds
-    into the final user message, and a cache entry made at a block that is followed by
-    another block in the same message does not match a later request where the message
-    ends there — measured as 27/27 misses (17.24 USD vs 7.41) on one Terminal-Bench
-    attempt. Anthropic's own pattern for per-turn reminders keeps them in the transcript,
-    which is a larger change (OPE-192 follow-up). Until then this provider keeps its
-    previous shape: the note is glued onto the last user message before it. With a live
-    clock that is the old minute-crossing miss; with the clock off it is fully cacheable."""
-    if not messages:
-        return messages
-    last = messages[-1]
-    text = last.get("content")
-    if last.get("role") != "user" or not (
-        isinstance(text, str) and text.startswith(_EPHEMERAL_CONTEXT_OPEN)
-    ):
-        return messages
-    out = list(messages[:-1])
-    for i in range(len(out) - 1, -1, -1):
-        if out[i].get("role") != "user":
-            continue
-        target = dict(out[i])
-        content = target.get("content")
-        block = "\n\n" + text
-        if isinstance(content, str):
-            target["content"] = content + block
-        elif isinstance(content, list):
-            target["content"] = [*content, {"type": "text", "text": block}]
-        else:
-            target["content"] = text
-        out[i] = target
-        return out
-    return messages  # no user message to glue onto: leave the note where it is
-
-
 def convert_messages(
     messages: list[dict[str, Any]],
 ) -> tuple[Optional[str], list[dict[str, Any]]]:
@@ -320,7 +283,6 @@ def convert_messages(
     into one message — this is what collapses a run of `role:"tool"` results (one per parallel
     call) into the single user message Anthropic requires, with any steering user text after.
     """
-    messages = _relocate_ephemeral_note(messages)
     system_parts: list[str] = []
     index = 0
     while index < len(messages) and messages[index].get("role") == "system":
@@ -415,11 +377,6 @@ def convert_tools(tools: Optional[list[dict[str, Any]]]) -> list[dict[str, Any]]
         entry["input_schema"] = parameters
         converted.append(entry)
     return converted
-
-
-# Mirrors coworker.engine.EPHEMERAL_CONTEXT_OPEN (a string, so this module keeps no
-# dependency on the engine).
-_EPHEMERAL_CONTEXT_OPEN = "<system-context>"
 
 
 def _add_cache_breakpoints(kwargs: dict[str, Any]) -> None:

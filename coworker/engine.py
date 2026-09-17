@@ -2268,41 +2268,35 @@ class TurnEngine:
         ) or ""
         if not context:
             return out
-        # OPE-192: the block goes on the NEWEST message, never further up. It carries a live
-        # clock (owner ruling 2026-08-20), so it changes every minute; anything it is
-        # attached to changes with it, and a provider's prompt cache is reusable only up to
-        # the first byte that differs. Attaching it to "the last user message" was right for
-        # chat (that IS the newest message) and wrong for a tool loop: tool results carry
-        # role "tool", so the last user message there is the task prompt — message one — and
-        # every minute crossing rewrote the whole conversation. Measured on Terminal-Bench:
-        # 16 of 105 calls on one Fable 5.1 attempt held 95% of its cache writes, 77% of its
-        # cost; on the Kimi K3 run, 60% of minute crossings missed vs 1.5% otherwise.
-        # Anthropic's diagnostics named it: `messages_changed`, first message.
-        #
-        # And it rides as its OWN trailing message in both shapes, never glued onto the
-        # user's text. The first attempt appended it to the newest user message when there
-        # was one; that keeps the engine's list stable, but a provider registers a cache
-        # entry only at its breakpoint, and Anthropic's breakpoint is the final content
-        # block — the note. The stable text before it was never an entry of its own, so the
-        # next turn (which no longer carries that note) matched nothing: every call missed
-        # (27/27 on the validation run, 17.24 USD vs 7.41). A separate message lets the
-        # Anthropic provider put its breakpoint on the last STABLE block and the note after
-        # it (see `_add_cache_breakpoints`); the converter folds the note into the same
-        # user message on the wire, so the model sees exactly what it saw before. The
-        # OpenAI-compatible wire accepts consecutive user messages and a user message after
-        # tool messages. Ephemeral like before: never persisted.
-        if out:
-            out.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"{EPHEMERAL_CONTEXT_OPEN}\n"
-                        "(automatic per-turn context, not a message from the user — "
-                        "continue the task)\n"
-                        f"{context}\n</system-context>"
-                    ),
-                }
-            )
+        # The block rides on the LAST user message — one shape for every provider. In a
+        # chat that is the newest message; in a tool loop (tool results carry role "tool")
+        # it is the task prompt, message one. That is only safe because the block holds
+        # nothing that moves on its own. OPE-192: it used to open with a `Now:` line to the
+        # minute, so every minute crossing rewrote message one, and a provider's prompt
+        # cache is reusable only up to the first byte that differs — the whole conversation
+        # was re-processed (measured: 16 of 105 calls on one Fable 5.1 attempt held 95% of
+        # its cache writes; on the Kimi K3 run 60% of minute crossings missed vs 1.5%
+        # otherwise). The time is a tool now (`current_time`). What is left — folders,
+        # skill menu, mode notices — changes only when the user changes something, so the
+        # outbound history stays byte-identical turn to turn. Ephemeral: never persisted.
+        block = (
+            f"\n\n{EPHEMERAL_CONTEXT_OPEN}\n"
+            "(automatic per-turn context, not part of the user's message)\n"
+            f"{context}\n</system-context>"
+        )
+        for i in range(len(out) - 1, -1, -1):
+            if out[i].get("role") != "user":
+                continue
+            msg = dict(out[i])
+            content = msg.get("content")
+            if isinstance(content, str):
+                msg["content"] = content + block
+            elif isinstance(content, list):  # content-parts (text + images)
+                msg["content"] = [*content, {"type": "text", "text": block}]
+            else:
+                msg["content"] = block
+            out[i] = msg
+            break
         return out
 
 

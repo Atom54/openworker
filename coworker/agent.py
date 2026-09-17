@@ -6,12 +6,12 @@ the skill catalog (progressive disclosure) + load_skill into a TurnEngine.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .agents import Agent, AgentContext, code_agent
 from .automation import scheduling_tools
+from .clock import clock_tools
 from .selfwake import selfwake_tools
 from .subscriptions import subscription_tools
 from .config import load_config
@@ -406,6 +406,11 @@ def build_engine(
     # on-completion / on-event). The scheduler tick resumes due wakes.
     if wake_store is not None and session_id and agent.scheduling:
         registry.register_all(selfwake_tools(wake_store, session_id))
+    # The clock, on demand, for every surface: the system prompt's "Today's date" is a
+    # session-start snapshot, and the per-turn context block must not carry a live time
+    # (see context_provider below). Deadlines, "how long ago", and the wake time for
+    # sleep_until all come from here.
+    registry.register_all(clock_tools())
 
     instructions = f"{agent.system_prompt}\n\n{_NARRATION_GUIDANCE}\n\n{_FIRST_CONTACT_GUIDANCE}"
     if ws is not None:
@@ -530,17 +535,14 @@ def build_engine(
     _engine_box: list = []
 
     def context_provider() -> str:
-        # Live clock, every turn (owner ruling 2026-08-20): the environment block's
-        # "Today's date" is a session-START snapshot — stale for long-lived/self-waking
-        # sessions — and carries no time of day, which absolute scheduling
-        # (sleep_until, scheduled tasks) needs to compute wake times.
+        # Nothing here may move on its own (OPE-192). The block is glued onto a message
+        # the provider has already cached, so a value that changes by itself — the live
+        # clock this block carried from 2026-08-20 to 2026-09-17 — rewrites that message
+        # on every turn and throws the whole cached conversation away. The time is a
+        # tool now (`current_time`, registered for every session) and a timer wake says
+        # when it fired; the folders, mode notices and skill menu below change only when
+        # the user changes something.
         parts: list[str] = []
-        if config.live_clock:
-            now = datetime.now().astimezone()
-            parts.append(f"Now: {now.strftime('%Y-%m-%d %H:%M')} ({now.tzname()})")
-        # OPE-192: with live_clock off the block carries only the folders and the skill
-        # menu, which change rarely, so it stays byte-identical turn to turn and the
-        # provider's prompt cache keeps working wherever the block lands.
         if permissions.mode is Mode.PLAN:
             parts.append(_PLAN_MODE_CONTEXT)
         elif permissions.mode is Mode.DISCUSS:

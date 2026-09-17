@@ -123,9 +123,9 @@ async def test_image_reaches_provider_unmodified():
 
     user_msgs = [m for m in (spy.captured or []) if m.get("role") == "user"]
     assert user_msgs, "no user message reached the provider"
-    # The last user message on the wire is the engine's per-turn `<system-context>` note
-    # (OPE-192: sent as its own trailing message); the attachment rides the one before it.
-    parts = [m for m in user_msgs if not str(m.get("content", "")).startswith("<system-context>")][-1]["content"]
+    # The engine's per-turn `<system-context>` block is glued onto this same message as a
+    # trailing text part; the image part before it is untouched.
+    parts = user_msgs[-1]["content"]
     assert isinstance(parts, list)
     images = [p for p in parts if p.get("type") == "image_url"]
     assert images and images[0]["image_url"]["url"] == url  # byte-for-byte intact
