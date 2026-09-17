@@ -146,6 +146,11 @@ class TurnEngine:
         items_approver: Optional[
             Callable[[dict[str, Any]], "Awaitable[dict[str, Any]]"]
         ] = None,
+        # Handles `request_connector` / `grant_connector` (spec §11.6): emits
+        # CONNECTOR_REQUESTED, waits for the human, returns {approved, …}.
+        connector_requester: Optional[
+            Callable[[dict[str, Any]], "Awaitable[dict[str, Any]]"]
+        ] = None,
         # Called (thread-safe, best-effort) when the user stops the turn — e.g. the
         # executor's kill for a running shell command.
         interrupt_hooks: Optional[list[Callable[[], None]]] = None,
@@ -185,6 +190,7 @@ class TurnEngine:
         # for the user's decision; approval pre-spawns the worker sessions and the result
         # carries the roster (actor ids). None on surfaces that can't prompt.
         self.team_approver = team_approver
+        self.connector_requester = connector_requester
         # Handles `propose_work_items` (the decomposition gate): emits ITEMS_PROPOSED,
         # waits; approval creates the items on the board. Mode-independent by design —
         # unlike propose_plan it carries no permission-mode semantics: propose_plan is
@@ -344,6 +350,11 @@ class TurnEngine:
         # literal "/skill …" line for the transcript, while `content` carries the model-facing
         # framing. `ts` (unix seconds, stamped on every appended message) is the same kind of
         # sidecar.
+        # A restart can interrupt a turn between a tool_use and its result (a
+        # parked approval is the common case). The provider hard-rejects such
+        # a history, so a NEW turn must first close any orphaned calls with an
+        # honest stub — otherwise one interruption poisons the session forever.
+        self._repair_dangling_tool_calls()
         message: dict[str, Any] = {
             "role": "user",
             "content": user_input,
@@ -474,6 +485,42 @@ class TurnEngine:
         if not self._cancel.is_set():
             async for event in self._loop():
                 yield event
+
+    def _repair_dangling_tool_calls(self) -> None:
+        """Close every orphaned tool_use in history with a stub tool result.
+
+        An interrupted turn (restart mid-approval, crash between call and
+        result) leaves an assistant message whose tool_calls have no results;
+        providers reject the whole conversation for it. Stubs are inserted
+        IMMEDIATELY after the offending assistant message, keep the ids, and
+        say honestly what happened — the model may re-issue the call."""
+        answered = {
+            m.get("tool_call_id") for m in self.messages if m.get("role") == "tool"
+        }
+        i = 0
+        while i < len(self.messages):
+            msg = self.messages[i]
+            stubs = []
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    if tc.get("id") and tc["id"] not in answered:
+                        stubs.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": json.dumps(
+                                    {
+                                        "error": "tool call interrupted — no result "
+                                        "was recorded (the session was restarted). "
+                                        "Re-issue the call if it is still needed."
+                                    }
+                                ),
+                                "ts": time.time(),
+                            }
+                        )
+            for offset, stub in enumerate(stubs, start=1):
+                self.messages.insert(i + offset, stub)
+            i += 1 + len(stubs)
 
     def _unanswered_trailing_tool_calls(self) -> list[ToolCall]:
         """The tool-calls of the last assistant message that don't yet have a tool result —
@@ -614,6 +661,7 @@ class TurnEngine:
                 payload["reasoning"] = turn.reasoning
             if turn.usage is not None:
                 payload["usage"] = {"model": self.model, **turn.usage.as_dict()}
+                self._audit_usage(turn.usage)
             if turn.finish_reason:
                 # How the reply ended (OPE-173): `stop` / `tool_calls` / `length`.
                 payload["finish_reason"] = turn.finish_reason
@@ -975,6 +1023,10 @@ class TurnEngine:
                 continue
             if tool_call.name == "propose_team":
                 async for event in self._handle_team_proposal(tool_call):
+                    yield event
+                continue
+            if tool_call.name in ("request_connector", "grant_connector"):
+                async for event in self._handle_connector_request(tool_call):
                     yield event
                 continue
             if tool_call.name == "propose_work_items":
@@ -1379,6 +1431,23 @@ class TurnEngine:
             reason = "approved by user (allow anyway)"
             self._audit(tool_call, stage="auto_allowed", status="allowed", reason=reason)
 
+        # A lead DENYING one of its workers' waiting calls runs nothing: the worker is told
+        # no and moves on, and the human can still answer the worker directly. Under
+        # Auto-Approve that needs neither the reviewer nor a card (live 2026-09-17: the
+        # human was asked to "Allow" a denial). An ALLOW still goes to the reviewer below,
+        # and a Manual lead still asks for both — that mode means "show me everything".
+        if (
+            not allowed
+            and decision.needs_user
+            and not decision.human_only
+            and tool_call.name == "decide_worker_call"
+            and self.permissions.mode is Mode.AUTO_APPROVE
+            and str((tool_call.arguments or {}).get("decision", "")).strip().lower() == "deny"
+        ):
+            allowed = True
+            reason = "a lead's denial of a worker's call runs nothing"
+            self._audit(tool_call, stage="auto_allowed", status="allowed", reason=reason)
+
         consulted_live = False
         unsure_note = ""  # the reviewer's hesitation, when an unsure verdict raised the card
         if (
@@ -1730,6 +1799,29 @@ class TurnEngine:
         record = self.session_facts.note(tool_call.name, tool_call.arguments)
         self._audit(tool_call, **record.to_audit())
 
+    def _audit_usage(self, usage: Any) -> None:
+        """One content-blind audit row per model round-trip (spec §5: the per-turn usage
+        event), so exported token columns are honest — tool rows only ever carried the
+        reviewer's own tokens. Stage "usage", the model in the (sanitized) args."""
+        if self.audit_sink is None:
+            return
+        try:
+            self.audit_sink(
+                {
+                    **self.audit_context,
+                    "stage": "usage",
+                    "status": "ok",
+                    "tool": "",
+                    "arguments": {"model": self.model},
+                    "tokens_in": int(getattr(usage, "input", 0) or 0),
+                    "tokens_out": int(getattr(usage, "output", 0) or 0),
+                    "cache_read": int(getattr(usage, "cache_read", 0) or 0),
+                    "cache_write": int(getattr(usage, "cache_write", 0) or 0),
+                }
+            )
+        except Exception:
+            pass
+
     def _audit(self, tool_call: ToolCall, **event: Any) -> None:
         if self.audit_sink is None:
             return
@@ -1794,6 +1886,47 @@ class TurnEngine:
                 "status": status,
                 "result_preview": _preview(result),
             },
+        )
+
+    async def _handle_connector_request(self, tool_call: ToolCall) -> AsyncIterator[Event]:
+        """`request_connector` (ask the human to connect a service) and `grant_connector`
+        (a lead asks the human to give one of its workers a connector) — spec §11.6.
+        Both are human gates: emit CONNECTOR_REQUESTED, await the out-of-band verdict,
+        hand it back. Declining is a normal outcome the coworker must work around and
+        say so; it is never an error."""
+        args = tool_call.arguments or {}
+        request = "grant" if tool_call.name == "grant_connector" else "connect"
+        connector = str(args.get("connector", "")).strip().lower()
+        worker = str(args.get("worker", "")).strip()
+        reason = str(args.get("reason", "")).strip()
+        if not connector or (request == "grant" and not worker):
+            result: dict[str, Any] = {
+                "approved": False,
+                "error": "name the connector" + (" and the worker" if request == "grant" else ""),
+            }
+        elif self.connector_requester is None:
+            result = {"approved": False, "error": "connector requests aren't available here"}
+        else:
+            yield Event(
+                EventType.CONNECTOR_REQUESTED,
+                {"request": request, "connector": connector, "worker": worker, "reason": reason},
+            )
+            self._audit(tool_call, stage="connector_requested", reason=reason)
+            result = await self._interruptible(
+                self.connector_requester(dict(args), tool_call.id),
+                interrupted={"approved": False, "error": "interrupted by user"},
+            ) or {"approved": False, "error": "no response"}
+            if not result.get("approved"):
+                result.setdefault(
+                    "guidance",
+                    "The user declined. Carry on without it and say plainly what you could not do.",
+                )
+        status = "ok" if result.get("approved") else "denied"
+        self.messages.append(_tool_result_message(tool_call, result))
+        self._audit(tool_call, stage="finished", status=status, result=result, result_preview=_preview(result))
+        yield Event(
+            EventType.TOOL_FINISHED,
+            {"name": tool_call.name, "status": status, "result_preview": _preview(result)},
         )
 
     async def _handle_team_proposal(self, tool_call: ToolCall) -> AsyncIterator[Event]:
