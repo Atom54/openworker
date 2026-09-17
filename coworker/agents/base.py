@@ -35,7 +35,9 @@ class Agent:
     # requires_folder: the session cannot start without a user-picked primary folder
     # (composer + engine gate; everything else starts on a scratch dir). subagents:
     # read-only explorer fan-out. scheduling: scheduled tasks + self-wake. messaging:
-    # exposes send_message. connectors: loads the integration toolset — True = every
+    # RETIRED (spec §11, 2026-09-05) — chat tools follow `connectors` like every other
+    # connector tool; the field is kept one release so old callers still construct.
+    # connectors: loads the integration toolset — True = every
     # connected connector (general builtins only), a tuple = allowlist (session gets
     # declared ∩ connected; OPE-93), False = none. Defaults keep non-persona callers
     # behaving as before. (The old family/needs_workspace/workspace trio collapsed into

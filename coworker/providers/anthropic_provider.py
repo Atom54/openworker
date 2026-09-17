@@ -55,6 +55,13 @@ def _usage_from(usage: Any) -> Optional[TokenUsage]:
 # (the call truncates mid-arguments and the write fails). Current Claude models all
 # accept ≥32k output.
 DEFAULT_MAX_TOKENS = 32000
+# The SDK refuses a NON-streaming request whose max_tokens implies more than ten minutes
+# of generation at its pessimistic 128k tokens/hour (max_tokens > 21,333) unless the caller
+# sets its own timeout. complete() callers (reviewer, summaries, titles) legitimately run
+# with the default cap, so above the ceiling the request carries an explicit timeout sized
+# to the SDK's own estimate for the largest default request.
+NONSTREAMING_TOKEN_CEILING = 128_000 * 600 // 3600
+LONG_REQUEST_TIMEOUT = 900.0
 
 logger = logging.getLogger(__name__)
 
@@ -559,6 +566,8 @@ class AnthropicProvider(ProviderClient):
         kwargs = self._request_kwargs(
             model=model, messages=messages, tools=tools, settings=settings, effort=plan
         )
+        if int(kwargs.get("max_tokens") or 0) > NONSTREAMING_TOKEN_CEILING:
+            kwargs.setdefault("timeout", LONG_REQUEST_TIMEOUT)
         client = self._ensure_client()
         # Stream-and-accumulate, not a plain create: the SDK REFUSES non-streaming
         # requests whose max_tokens could exceed ~10 minutes (ValueError before any

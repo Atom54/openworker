@@ -8,6 +8,7 @@ than silently producing a broken persona (a third-party persona must fail loudly
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +64,8 @@ class PersonaManifest:
     requires_folder: bool = False
     subagents: bool = False
     scheduling: bool = True
+    # `messaging:` is parsed and IGNORED (spec §11, 2026-09-05): posting to a chat
+    # platform is decided by `connectors:` alone. Removed next release.
     messaging: bool = False
     # Connector grant (OPE-93): False = none, a tuple = allowlist of connector ids
     # (session exposes declared ∩ connected), True = every connected connector — the
@@ -77,7 +80,11 @@ class PersonaManifest:
     # to, so staffing fails closed on personas without the trait.
     team: Optional[str] = None
     default_permission_mode: str = "interactive"
-    recommended_models: list[str] = field(default_factory=list)
+    # `models:` (connectors-across-machines spec §4): the ORDERED list of model ids this
+    # coworker may run on. First entry a machine can run = its default there; the
+    # composer's picker shows only the list; empty = any model (the machine default).
+    # `recommended_models` is the old name — read as an alias for one release.
+    models: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     mcp: list[str] = field(default_factory=list)
     # Sharing v1 (OPE-7): the author's version string ("1", "1.2", "2026-08"…). Purely
@@ -97,6 +104,19 @@ class PersonaManifest:
         None  # where it was loaded from (path / url), for provenance
     )
 
+    @property
+    def recommended_models(self) -> list[str]:
+        """Old name for `models` — alias for one release, then removed."""
+        return self.models
+
+    @property
+    def can_chat(self) -> bool:
+        """Whether this persona may post to a chat platform — derived from `connectors:`
+        (every connected connector, or a declared chat platform), never from `messaging:`."""
+        if self.connectors is True:
+            return True
+        return bool(set(self.connectors or ()) & {"slack", "telegram"})
+
     def to_agent(self):
         """Materialize the runtime Agent (prompt + catalog-expanded tools + traits)."""
         from ..agents.base import Agent
@@ -112,7 +132,7 @@ class PersonaManifest:
             requires_folder=self.requires_folder,
             subagents=self.subagents,
             scheduling=self.scheduling,
-            messaging=self.messaging,
+            messaging=self.can_chat,
             connectors=self.connectors,
             team=self.team,
         )
@@ -204,6 +224,22 @@ def _strlist(meta: dict, key: str) -> list[str]:
     if isinstance(val, list):
         return [str(v).strip() for v in val if str(v).strip()]
     raise ManifestError(f"`{key}` must be a list or comma-separated string")
+
+
+def _models(persona_id: str, meta: dict) -> list[str]:
+    """`models:` with the `recommended_models` alias (one release). Ids are kept verbatim
+    and de-duplicated in order; a manifest naming both keys must agree."""
+    new = _strlist(meta, "models")
+    old = _strlist(meta, "recommended_models")
+    if old and new and old != new:
+        raise ManifestError(
+            f"persona {persona_id!r}: `models` and `recommended_models` (deprecated) differ"
+        )
+    if old and not new:
+        logging.getLogger(__name__).info(
+            "persona %s uses `recommended_models` — rename it to `models`", persona_id
+        )
+    return list(dict.fromkeys(new or old))
 
 
 def _recommends(persona_id: str, meta: dict) -> list[Recommendation]:
@@ -329,7 +365,7 @@ def parse_manifest(
         connectors=connectors,
         team=team_raw or None,
         default_permission_mode=mode,
-        recommended_models=_strlist(meta, "recommended_models"),
+        models=_models(persona_id, meta),
         skills=_strlist(meta, "skills"),
         mcp=_strlist(meta, "mcp"),
         version=str(meta.get("version", "") or "").strip(),

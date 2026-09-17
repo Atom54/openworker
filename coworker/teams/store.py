@@ -62,6 +62,9 @@ ITEM_TRANSITIONED = "item_transitioned"
 ITEM_COMMENTED = "item_commented"
 ITEM_ASSIGNED = "item_assigned"
 ITEM_LINKED = "item_linked"
+# §11.6: a manual-mode worker parked on a tool approval — the lead cannot approve it
+# (it holds nothing the human did not grant) but should wait knowingly or reassign.
+WORKER_WAITING = "worker_waiting"
 
 _HASHED_FIELDS = (
     "ts",
@@ -370,7 +373,7 @@ class TeamStore:
         key = f"sub:{subscriber}:{space}"
         events = self.events(
             space,
-            kinds=[ITEM_TRANSITIONED, ITEM_CREATED, ITEM_ASSIGNED],
+            kinds=[ITEM_TRANSITIONED, ITEM_CREATED, ITEM_ASSIGNED, WORKER_WAITING],
             since_seq=self._cursor(key),
             limit=limit,
         )

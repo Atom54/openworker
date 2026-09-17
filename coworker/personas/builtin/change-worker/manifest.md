@@ -9,7 +9,7 @@ subagents: true
 version: "1"
 team: worker
 tools: [shell, code_files, git, search, todo]
-recommended_models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
+models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
 default_permission_mode: interactive
 description: An incident-diagnosis worker that works the change side — recent commits, deploy bundles, config and migration diffs. Most incidents start with a change; this worker finds the one that matters and says exactly why it is (or is not) the cause.
 ---
