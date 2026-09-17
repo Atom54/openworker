@@ -534,8 +534,13 @@ def build_engine(
         # "Today's date" is a session-START snapshot — stale for long-lived/self-waking
         # sessions — and carries no time of day, which absolute scheduling
         # (sleep_until, scheduled tasks) needs to compute wake times.
-        now = datetime.now().astimezone()
-        parts = [f"Now: {now.strftime('%Y-%m-%d %H:%M')} ({now.tzname()})"]
+        parts: list[str] = []
+        if config.live_clock:
+            now = datetime.now().astimezone()
+            parts.append(f"Now: {now.strftime('%Y-%m-%d %H:%M')} ({now.tzname()})")
+        # OPE-192: with live_clock off the block carries only the folders and the skill
+        # menu, which change rarely, so it stays byte-identical turn to turn and the
+        # provider's prompt cache keeps working wherever the block lands.
         if permissions.mode is Mode.PLAN:
             parts.append(_PLAN_MODE_CONTEXT)
         elif permissions.mode is Mode.DISCUSS:

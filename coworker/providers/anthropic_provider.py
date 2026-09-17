@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 
 import json
+import os
 import re
 from typing import Any, Optional
 
@@ -93,6 +94,37 @@ def _uses_budget_thinking(model: str) -> bool:
 # the same call. Beta header + param, beta messages endpoint.
 _FALLBACK_BETA = "server-side-fallback-2026-06-01"
 _FALLBACK_MODEL = "claude-opus-4-8"
+
+
+# DIAGNOSTIC INSTRUMENT, off unless COWORKER_CACHE_DIAGNOSTICS=1 in the environment.
+# In one long Fable 5.1 session, one call in six failed to reuse the conversation
+# cache and rewrote the whole prompt at 1.25x input — three quarters of the session's cost.
+# Replaying those exact requests off-container caches perfectly, so the cause is not the
+# content we send and cannot be found from the recorded data. This asks Anthropic directly:
+# each request carries the previous response's id, and the reply names the reason the cache
+# prefix could not be reused. Never enabled in a normal run — it changes the request.
+_CACHE_DIAGNOSTICS_BETA = "cache-diagnosis-2026-04-07"
+
+
+def _outbound_fingerprints(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Diagnostic only: a short hash per outbound message (plus system and tools), so two
+    consecutive requests can be diffed offline to find the first message that changed."""
+    import hashlib
+
+    def h(obj: Any) -> str:
+        return hashlib.sha1(
+            json.dumps(obj, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:12]
+
+    return {
+        "system": h(kwargs.get("system")),
+        "tools": h(kwargs.get("tools")),
+        "messages": [h(m) for m in kwargs.get("messages") or []],
+    }
+
+
+def _cache_diagnostics_on() -> bool:
+    return (os.environ.get("COWORKER_CACHE_DIAGNOSTICS") or "").strip() not in ("", "0")
 
 
 def _needs_refusal_fallback(model: str) -> bool:
@@ -242,6 +274,43 @@ def _user_blocks(content: Any) -> list[dict[str, Any]]:
     return blocks
 
 
+def _relocate_ephemeral_note(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """OPE-192: the engine sends its per-turn `<system-context>` note as a trailing user
+    message (right for the OpenAI-compatible wire, where the prefix through the last tool
+    result then stays byte-identical). On Anthropic that shape is WORSE: the note folds
+    into the final user message, and a cache entry made at a block that is followed by
+    another block in the same message does not match a later request where the message
+    ends there — measured as 27/27 misses (17.24 USD vs 7.41) on one Terminal-Bench
+    attempt. Anthropic's own pattern for per-turn reminders keeps them in the transcript,
+    which is a larger change (OPE-192 follow-up). Until then this provider keeps its
+    previous shape: the note is glued onto the last user message before it. With a live
+    clock that is the old minute-crossing miss; with the clock off it is fully cacheable."""
+    if not messages:
+        return messages
+    last = messages[-1]
+    text = last.get("content")
+    if last.get("role") != "user" or not (
+        isinstance(text, str) and text.startswith(_EPHEMERAL_CONTEXT_OPEN)
+    ):
+        return messages
+    out = list(messages[:-1])
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") != "user":
+            continue
+        target = dict(out[i])
+        content = target.get("content")
+        block = "\n\n" + text
+        if isinstance(content, str):
+            target["content"] = content + block
+        elif isinstance(content, list):
+            target["content"] = [*content, {"type": "text", "text": block}]
+        else:
+            target["content"] = text
+        out[i] = target
+        return out
+    return messages  # no user message to glue onto: leave the note where it is
+
+
 def convert_messages(
     messages: list[dict[str, Any]],
 ) -> tuple[Optional[str], list[dict[str, Any]]]:
@@ -251,6 +320,7 @@ def convert_messages(
     into one message — this is what collapses a run of `role:"tool"` results (one per parallel
     call) into the single user message Anthropic requires, with any steering user text after.
     """
+    messages = _relocate_ephemeral_note(messages)
     system_parts: list[str] = []
     index = 0
     while index < len(messages) and messages[index].get("role") == "system":
@@ -347,6 +417,11 @@ def convert_tools(tools: Optional[list[dict[str, Any]]]) -> list[dict[str, Any]]
     return converted
 
 
+# Mirrors coworker.engine.EPHEMERAL_CONTEXT_OPEN (a string, so this module keeps no
+# dependency on the engine).
+_EPHEMERAL_CONTEXT_OPEN = "<system-context>"
+
+
 def _add_cache_breakpoints(kwargs: dict[str, Any]) -> None:
     """Opt the request into prompt caching (5-minute ephemeral, prefix-matched).
 
@@ -390,7 +465,11 @@ def _effort_record(plan: Optional[EffortPlan], fallback_note: Optional[str]) -> 
 
 
 def _anthropic_extras(
-    thinking_blocks: list[dict[str, Any]], stop_reason: Any = None
+    thinking_blocks: list[dict[str, Any]],
+    stop_reason: Any = None,
+    *,
+    cache_diagnostics: Optional[dict[str, Any]] = None,
+    outbound_hashes: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """The `_anthropic` sidecar persisted on the assistant message (empty when nothing
     to keep): raw thinking blocks, which convert_messages replays verbatim, and the raw
@@ -402,6 +481,12 @@ def _anthropic_extras(
         sidecar["blocks"] = thinking_blocks
     if stop_reason:
         sidecar["stop_reason"] = stop_reason
+    # Diagnostic only: Anthropic's reason for not reusing the prompt cache on this call,
+    # recorded on the message so it can be read back from a finished run.
+    if cache_diagnostics:
+        sidecar["cache_diagnostics"] = cache_diagnostics
+    if outbound_hashes:
+        sidecar["outbound_hashes"] = outbound_hashes
     return {"_anthropic": sidecar} if sidecar else {}
 
 
@@ -415,6 +500,9 @@ class AnthropicProvider(ProviderClient):
         secrets: Any = None,
         thinking_budget: Optional[int] = None,
     ):
+        # Diagnostic only (see _cache_diagnostics_on): the id of the previous response, so
+        # the next request can ask why the cache prefix was not reused.
+        self._last_message_id: Optional[str] = None
         # Mirrors OpenAIProvider: the SDK client is built lazily so engines can be assembled
         # before any key exists; the key resolves at call time (explicit → env → SecretStore).
         # Tests inject a `client` directly. `thinking_budget` (tokens, from the provider
@@ -630,12 +718,29 @@ class AnthropicProvider(ProviderClient):
         )
         kwargs["stream"] = True
         client = self._ensure_client()
+        diagnosing = _cache_diagnostics_on()
+        outbound_hashes = _outbound_fingerprints(kwargs) if diagnosing else None
+
         def _open(kw: dict[str, Any]) -> Any:
             if _needs_refusal_fallback(model):
+                extra: dict[str, Any] = {}
+                betas = [_FALLBACK_BETA]
+                if diagnosing:
+                    betas.append(_CACHE_DIAGNOSTICS_BETA)
+                    extra["diagnostics"] = {
+                        "previous_message_id": self._last_message_id
+                    }
                 return client.beta.messages.create(
                     **kw,
-                    betas=[_FALLBACK_BETA],
+                    betas=betas,
                     fallbacks=[{"model": _FALLBACK_MODEL}],
+                    **extra,
+                )
+            if diagnosing:
+                return client.beta.messages.create(
+                    **kw,
+                    betas=[_CACHE_DIAGNOSTICS_BETA],
+                    diagnostics={"previous_message_id": self._last_message_id},
                 )
             return client.messages.create(**kw)
 
@@ -650,14 +755,23 @@ class AnthropicProvider(ProviderClient):
         usage: Optional[TokenUsage] = None
 
         last_message_delta: Any = None
+        cache_diagnostics: Optional[dict[str, Any]] = None
         for event in events:
             kind = getattr(event, "type", None)
             if kind == "message_start":
                 # Prompt-side counts (input + cache split) ride the opening event.
-                usage = (
-                    _usage_from(getattr(getattr(event, "message", None), "usage", None))
-                    or usage
-                )
+                started = getattr(event, "message", None)
+                usage = _usage_from(getattr(started, "usage", None)) or usage
+                if diagnosing and started is not None:
+                    self._last_message_id = getattr(started, "id", None)
+                    diag = getattr(started, "diagnostics", None)
+                    if diag is not None:
+                        try:
+                            cache_diagnostics = (
+                                diag if isinstance(diag, dict) else diag.model_dump()
+                            )
+                        except Exception:  # noqa: BLE001
+                            cache_diagnostics = {"raw": str(diag)}
             elif kind == "content_block_start":
                 block = getattr(event, "content_block", None)
                 block_kind = getattr(block, "type", None)
@@ -733,7 +847,12 @@ class AnthropicProvider(ProviderClient):
                 tool_calls=tool_calls,
                 finish_reason=_STOP_REASON_MAP.get(stop_reason, stop_reason),
                 reasoning=_reasoning_text(thinking_blocks),
-                extras=_anthropic_extras(thinking_blocks, stop_reason),
+                extras=_anthropic_extras(
+                    thinking_blocks,
+                    stop_reason,
+                    cache_diagnostics=cache_diagnostics,
+                    outbound_hashes=outbound_hashes,
+                ),
                 usage=usage,
                 output_limit=kwargs.get("max_tokens"),
                 effort=_effort_record(plan, fallback_note),

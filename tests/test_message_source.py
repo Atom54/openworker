@@ -134,7 +134,10 @@ def test_message_source_persisted_and_stripped(tmp_path):
 
     # the provider was called and saw the framed text with NO source / unknown keys
     assert provider.calls, "provider should have been invoked"
-    sent_user = [m for m in provider.calls[0] if m.get("role") == "user"][-1]
+    # The last user message on the wire is the engine's per-turn `<system-context>` note
+    # (OPE-192: sent as its own trailing message); the delivered text is the one before it.
+    sent_users = [m for m in provider.calls[0] if m.get("role") == "user"]
+    sent_user = [m for m in sent_users if not str(m.get("content", "")).startswith("<system-context>")][-1]
     assert "source" not in sent_user
     assert "subscribed" in sent_user["content"]  # framed, not raw
     # NO message handed to ANY provider call carries a source key

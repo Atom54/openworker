@@ -66,6 +66,12 @@ class Config:
     # the summary itself never gets written. Environment override:
     # COWORKER_COMPACTION_SUMMARY_MAX_TOKENS.
     compaction_summary_max_tokens: Optional[int] = None
+    # OPE-192: the per-turn context block opens with the current time to the minute (owner
+    # ruling 2026-08-20: scheduling and self-waking sessions need it). That line changes
+    # the block every minute, and a provider's prompt cache is reusable only up to the
+    # first byte that differs. Set false where nothing schedules (benchmarks, batch jobs)
+    # to make the block static. Environment override: COWORKER_LIVE_CLOCK=0.
+    live_clock: bool = True
     allowed_commands: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_COMMANDS)
     )
@@ -118,6 +124,7 @@ _FIELDS = {
     "tool_result_max_bytes",
     "compaction_cap_tokens",
     "compaction_summary_max_tokens",
+    "live_clock",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -173,6 +180,7 @@ REASONING_EFFORT_ENV = "COWORKER_REASONING_EFFORT"
 TOOL_RESULT_MAX_BYTES_ENV = "COWORKER_TOOL_RESULT_MAX_BYTES"
 COMPACTION_CAP_TOKENS_ENV = "COWORKER_COMPACTION_CAP_TOKENS"
 COMPACTION_SUMMARY_MAX_TOKENS_ENV = "COWORKER_COMPACTION_SUMMARY_MAX_TOKENS"
+LIVE_CLOCK_ENV = "COWORKER_LIVE_CLOCK"
 
 
 def _nonnegative_int(value: Any, source: str) -> Optional[int]:
@@ -276,6 +284,13 @@ def load_config(
                 f"compaction_cap_tokens must be a positive integer, got {raw_comp!r} ({COMPACTION_CAP_TOKENS_ENV})"
             )
         cfg.compaction_cap_tokens = parsed_comp
+    if not isinstance(cfg.live_clock, bool):
+        raise ValueError(f"live_clock must be true or false, got {cfg.live_clock!r} (config.toml)")
+    raw_clock = (os.environ.get(LIVE_CLOCK_ENV) or "").strip().lower()
+    if raw_clock:
+        if raw_clock not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
+            raise ValueError(f"live_clock must be 0/1/true/false, got {raw_clock!r} ({LIVE_CLOCK_ENV})")
+        cfg.live_clock = raw_clock in ("1", "true", "yes", "on")
     cfg.compaction_summary_max_tokens = _positive_int_setting(
         cfg.compaction_summary_max_tokens,
         "compaction_summary_max_tokens",
