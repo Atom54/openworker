@@ -132,6 +132,24 @@ type their own direction). A picked option is a clear brief: start on it. Keep i
 and skip all of this when the user already gave you a task."""
 
 
+CHAT_PLATFORMS: frozenset[str] = frozenset({"slack", "telegram"})
+
+
+def _chat_platforms(
+    agent: Agent, secrets: SecretStore, connector_filter: Optional[set[str]] = None
+) -> set[str]:
+    """The chat platforms this session may post to: gateway-enabled (token or relay
+    present) ∩ the persona's `connectors:` allowlist ∩ the session's effective set."""
+    if not agent.connectors:
+        return set()
+    enabled = {name for name, s in load_settings(secrets).items() if s.enabled} & CHAT_PLATFORMS
+    if agent.connectors is not True:
+        enabled &= set(agent.connectors)
+    if connector_filter is not None:
+        enabled &= connector_filter
+    return enabled
+
+
 def _enabled_connector_tools(secrets: SecretStore) -> tuple[set[str], set[str]]:
     connectors = {c["name"]: c for c in connector_list(secrets)}
     enabled_connectors = {
@@ -244,11 +262,19 @@ def build_engine(
     plan_approver: Optional[Any] = None,
     question_asker: Optional[Any] = None,
     tool_requester: Optional[Any] = None,
+    connector_requester: Optional[Any] = None,
     team_approver: Optional[Any] = None,
     items_approver: Optional[Any] = None,
     subscription_store: Optional[Any] = None,
     channel_buffer: Optional[Any] = None,
     routing_targets: Optional[list[str]] = None,
+    # Cloud-first subscribe / release hooks (connectors-across-machines spec §3.3):
+    # the manager's, so an agent's subscribe obeys the same one-responder rule as the UI.
+    subscription_register: Optional[Callable[[str, str], dict]] = None,
+    subscription_release: Optional[Callable[[str, str], None]] = None,
+    # §11.6: a lead's `decide_worker_call` resolves a worker's parked prompt through the
+    # manager (team membership + the durable wait queue live there).
+    worker_decider: Optional[Callable[[str, str, str, str], dict]] = None,
     connector_filter: Optional[set[str]] = None,
     # A set (static snapshot) or a zero-arg callable (live, re-evaluated per load_skill).
     skill_filter: Optional[set[str] | Callable[[], set[str]]] = None,
@@ -320,10 +346,14 @@ def build_engine(
     # MCP / connector tools (supplied by the manager) carry their own metadata + schema.
     if extra_tools:
         registry.register_all(extra_tools)
-    # Messaging personas (Cowork / Ops / MyHelper) expose send_message; MyHelper also uses it as
-    # the reply path for inbound Telegram/Slack super-agent sessions.
+    # Chat tools follow the connector gate (spec §11, 2026-09-05): a session whose
+    # effective connector set includes a chat platform gets the generic reply pair
+    # (send_message / send_file, kept until §11.7 step 7) and the subscription tools.
+    # The old `messaging` trait no longer decides anything — "Slack enabled" is the
+    # whole condition; the platform's own catalog tools arrive through
+    # make_integration_tools below.
     secrets = secrets or SecretStore()
-    if agent.messaging and any(s.enabled for s in load_settings(secrets).values()):
+    if _chat_platforms(agent, secrets, connector_filter):
         registry.register(make_send_message_tool(secrets))
         # send_file (§34): hand deliverables into the chat — same targets, but its OWN
         # approval surface (a thread's standing send_message grant never covers uploads).
@@ -339,6 +369,8 @@ def build_engine(
                     session_id,
                     channel_buffer,
                     routing_targets=routing_targets,
+                    register=subscription_register,
+                    release=subscription_release,
                 )
             )
     # Surfaces with a multi-root workspace can ask the user mid-task for another folder.
@@ -517,9 +549,23 @@ def build_engine(
     # mode) and propose_team (staffing → pre-spawn on approval).
     if agent.team == "lead":
         from .teams.tools import propose_team_tool, propose_work_items_tool
+        from .tools.connreq import grant_connector_tool
 
         registry.register(propose_work_items_tool())
         registry.register(propose_team_tool())
+        # §11.6: a lead may ask the human to give one of its workers a connector, and a
+        # Manual lead answers its workers' parked calls (the call itself asks the human).
+        registry.register(grant_connector_tool())
+        if worker_decider is not None:
+            from .teams.tools import decide_worker_call_tool
+
+            registry.register(decide_worker_call_tool(worker_decider))
+    # §11.6: any connector-capable coworker may ask the human to connect a service it
+    # could use (bounded by its `connectors:` declaration — the consent ceiling).
+    if agent.connectors:
+        from .tools.connreq import request_connector_tool
+
+        registry.register(request_connector_tool())
 
     # Per-turn ephemeral context, appended to the latest user message since mid-thread system
     # messages aren't reliable across providers. Three producers: the plan-mode reminder (mode can
@@ -606,6 +652,7 @@ def build_engine(
         plan_approver=plan_approver,
         question_asker=question_asker,
         tool_requester=tool_requester,
+        connector_requester=connector_requester,
         team_approver=team_approver,
         items_approver=items_approver,
     )

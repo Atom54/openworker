@@ -9,7 +9,7 @@ subagents: true
 version: "1"
 team: worker
 tools: [code_files, git, search, shell, todo]
-recommended_models: [anthropic:claude-opus-4-8]
+models: [anthropic:claude-opus-4-8]
 default_permission_mode: interactive
 description: A UI/UX-focused coworker that works team-style under a lead — layout, styling, interaction polish, and design-system consistency, handed off through review.
 ---

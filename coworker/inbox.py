@@ -1,9 +1,16 @@
-"""The Inbox — the canonical, cross-session human-attention queue.
+"""The durable wait queue for prompts — NOT the Inbox surface.
 
-While a user works in one session (or is away with a session running Unattended), the Inbox
-holds what other agents need from them: an **approval**, a **question**, or a **notification**.
-It is the store of record; messaging connectors / mobile (Phase 3) are transports of the same
-items.
+NAMING (owner ruling 2026-09-05): this module and ``InboxStore`` are the **durable wait
+queue**: every prompt a session parks while it waits for a human — an approval, a
+question, a folder/plan/staffing/connector gate — lives here as an item so it survives a
+dropped socket or a restart and can be answered from any surface. Think of it as
+``DurableWaitQueue``. The *Inbox* the user sees is a different thing: the cross-session
+list that shows ONLY items whose ``visibility`` is ``inbox`` — which a session gets only
+when the user set it Unattended. An attended session's items are ``inline``: they render
+as a card in that session and never appear in the Inbox. When writing about this code,
+say "parks the prompt and waits", never "sends it to the Inbox"; the Inbox is the
+unattended dial and nothing else. (The class and module names stay for one release —
+renaming them touches every surface — but new code should not spread the old name.)
 
 Item state machine (the anti-race contract): each item is ``pending → resolved``, resolved
 **once**, idempotent + first-responder-wins — so answering from any surface (in-app, Slack, the
@@ -28,6 +35,7 @@ KIND_NOTIFICATION = "notification"
 KIND_DIRECTORY = "directory"  # agent asks to be granted a folder
 KIND_PLAN = "plan"  # agent presents a plan for approval
 KIND_TOOL = "tool"  # agent asks for a missing CLI tool to be installed
+KIND_CONNECTOR = "connector"  # §11.6: connect a service / grant a worker a connector
 
 STATE_PENDING = "pending"
 STATE_RESOLVED = "resolved"
@@ -73,6 +81,9 @@ class InboxItem:
     inbox: str = "default"  # named inbox / delivery binding (Phase 3 routing)
     created_at: str = field(default_factory=_now)
     resolved_at: Optional[str] = None
+    # Who resolved it (controller-verified login when the answer came through the cloud;
+    # the session's actor for a live in-app answer; "" when unknown/local).
+    resolved_by: str = ""
     visibility: str = VIS_INBOX  # inline (attended) vs inbox (unattended)
     # The tool call this prompt is blocking (durable resume: persisted so a restart can rebuild the
     # suspension and continue the turn). Makes an item idempotent by (session_id, tool_call_id).
@@ -292,6 +303,28 @@ class InboxStore:
             tool_call_id=tool_call_id,
         )
 
+    def add_connector_request(
+        self,
+        session_id,
+        title,
+        *,
+        body="",
+        inbox="default",
+        visibility=VIS_INBOX,
+        data=None,
+        tool_call_id=None,
+    ) -> InboxItem:
+        return self.add(
+            session_id,
+            KIND_CONNECTOR,
+            title,
+            body=body,
+            inbox=inbox,
+            visibility=visibility,
+            data=data,
+            tool_call_id=tool_call_id,
+        )
+
     def add_notification(
         self, session_id, title, *, body="", inbox="default", visibility=VIS_INBOX
     ) -> InboxItem:
@@ -307,6 +340,15 @@ class InboxStore:
     # -- queries ----------------------------------------------------------------
     def get(self, item_id: str) -> Optional[InboxItem]:
         return self._items.get(item_id)
+
+    def resolver_of(self, session_id: str, tool_call_id: str) -> str:
+        """Who resolved the item gating this tool call ("" if none/unknown)."""
+        if not tool_call_id:
+            return ""
+        for item in self._items.values():
+            if item.session_id == session_id and item.tool_call_id == tool_call_id and item.state == STATE_RESOLVED:
+                return item.resolved_by or ""
+        return ""
 
     def list(
         self,
@@ -331,9 +373,11 @@ class InboxStore:
         return self.list(session_id=session_id, state=STATE_PENDING)
 
     # -- the state machine ------------------------------------------------------
-    def resolve(self, item_id: str, resolution: str) -> bool:
+    def resolve(self, item_id: str, resolution: str, by: str = "") -> bool:
         """Resolve an item exactly once. First responder wins; later attempts are no-ops
-        (return False). Fires any awaiting agent (the suspended inbox_approver)."""
+        (return False). Fires any awaiting agent (the suspended inbox_approver).
+        `by` = who decided (spec §Fleet under the org: the audit row of the tool call
+        this item gated is stamped `approved_by` from it)."""
         with self._lock:
             item = self._items.get(item_id)
             if item is None or item.state == STATE_RESOLVED:
@@ -341,6 +385,7 @@ class InboxStore:
             item.state = STATE_RESOLVED
             item.resolution = resolution
             item.resolved_at = _now()
+            item.resolved_by = (by or "").strip()
             self._save()
         waiter = self._waiters.get(item_id)
         if waiter is not None:
@@ -369,6 +414,24 @@ class InboxStore:
         await ev.wait()
         resolved = self._items.get(item_id)
         return (resolved.resolution if resolved else "") or ""
+
+    def promote_to_inbox(self, session_id: str) -> list[InboxItem]:
+        """Flip a session's still-pending INLINE prompts to Inbox visibility. Called when
+        the last live viewer of an attended session disconnects: an inline item shows only
+        inside that session, so with nobody watching it the agent would wait invisibly
+        (the 2026-09-01 stall — a question asked over the live path, socket dropped, turn
+        parked until an engine rebuild re-raised it). Promoted items appear in the
+        cross-session Inbox (and mirror to a bound channel) while staying answerable inline
+        when the session is reopened. Returns the items that changed."""
+        changed: list[InboxItem] = []
+        with self._lock:
+            for item in self.pending(session_id):
+                if item.visibility == VIS_INLINE:
+                    item.visibility = VIS_INBOX
+                    changed.append(item)
+            if changed:
+                self._save()
+        return changed
 
     # -- resume reconciliation --------------------------------------------------
     def reconcile_on_resume(self, session_id: str) -> dict:

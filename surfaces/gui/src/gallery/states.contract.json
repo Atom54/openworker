@@ -1,0 +1,5085 @@
+{
+  "note": "GENERATED — run `npm run gallery:contract`; do not edit",
+  "cards": {
+    "approval": {
+      "event": "permission_required",
+      "canonical": "shell-command",
+      "states": {
+        "shell-command": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "npm test -- --run invoices"
+          },
+          "reason": "Run the API tests for the new route",
+          "category": "shell"
+        },
+        "read-only-command": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "ls"
+          },
+          "reason": "The coworker wants to run a command.",
+          "readonly_ok": true
+        },
+        "reviewer-unsure": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "python3 helper.py"
+          },
+          "reason": "requires approval",
+          "reviewer_unsure": "This runs a newly created script whose effects cannot be determined from the command."
+        },
+        "provenance-warning": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "python3 scripts/backfill_pdf_keys.py --apply"
+          },
+          "reason": "Backfill the missing keys",
+          "category": "shell",
+          "provenance": "backfill_pdf_keys.py was created by the agent 3 steps ago"
+        },
+        "write-file": {
+          "name": "write_file",
+          "arguments": {
+            "path": "src/fetch_data.py",
+            "content": "import json\nimport urllib.request\n\ncompanies = [\"NVDA\", \"AMD\"]\nprint(len(companies))\ndone = True"
+          },
+          "reason": ""
+        },
+        "web-fetch": {
+          "name": "web_fetch",
+          "arguments": {
+            "url": "https://docs.stripe.com/api/invoices/object"
+          },
+          "reason": "Check the invoice object's PDF field",
+          "category": "network"
+        },
+        "connector-action": {
+          "name": "github_create_pull_request",
+          "arguments": {
+            "repo": "acme/billing-service",
+            "title": "Invoice PDF download",
+            "base": "main",
+            "head": "lead/invoice-pdf"
+          },
+          "reason": "Open the pull request for issue #3",
+          "category": "connector"
+        },
+        "automation-run": {
+          "name": "send_message",
+          "arguments": {
+            "target": "slack:T1/C1",
+            "text": "Weekly digest ready"
+          },
+          "reason": "",
+          "category": "messaging",
+          "standing_target": "slack:T1/C1"
+        },
+        "long-message": {
+          "name": "send_message",
+          "arguments": {
+            "target": "slack:T1/C1",
+            "text": "aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. "
+          },
+          "reason": "",
+          "category": "messaging"
+        },
+        "automation-consent": {
+          "name": "create_scheduled_task",
+          "arguments": {
+            "title": "Weekly digest",
+            "instructions": "Summarize the week and post it.",
+            "cron": "0 9 * * 1",
+            "permissions": [
+              {
+                "tool": "send_message",
+                "target": "slack:T1/C1",
+                "access": "write"
+              },
+              {
+                "tool": "github_list_commits",
+                "target": "rohit/agent-platform",
+                "access": "read"
+              }
+            ]
+          },
+          "reason": "",
+          "category": "automation"
+        },
+        "long-command": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "set -euo pipefail\ncd infra\nterraform init -backend-config=envs/demo.backend.hcl\nterraform plan -var-file=envs/demo.tfvars -out=plan.bin\nterraform show -json plan.bin > plan.json\njq '[.resource_changes[] | select(.change.actions | index(\"delete\"))] | length' plan.json\nterraform apply plan.bin"
+          },
+          "reason": "Apply the bucket policy change",
+          "category": "shell"
+        },
+        "minimal": {
+          "name": "run_shell",
+          "arguments": {
+            "command": "ls"
+          }
+        }
+      },
+      "inbox": {
+        "shell-command": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "Run the API tests for the new route",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "npm test -- --run invoices"
+            }
+          }
+        },
+        "read-only-command": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "The coworker wants to run a command.",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "ls"
+            }
+          }
+        },
+        "reviewer-unsure": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "requires approval",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "python3 helper.py"
+            }
+          }
+        },
+        "provenance-warning": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "Backfill the missing keys",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "python3 scripts/backfill_pdf_keys.py --apply"
+            }
+          }
+        },
+        "write-file": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `write_file`?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "write_file",
+            "arguments": {
+              "path": "src/fetch_data.py",
+              "content": "import json\nimport urllib.request\n\ncompanies = [\"NVDA\", \"AMD\"]\nprint(len(companies))\ndone = True"
+            }
+          }
+        },
+        "web-fetch": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `web_fetch`?",
+          "body": "Check the invoice object's PDF field",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "web_fetch",
+            "arguments": {
+              "url": "https://docs.stripe.com/api/invoices/object"
+            }
+          }
+        },
+        "connector-action": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `github_create_pull_request`?",
+          "body": "Open the pull request for issue #3",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "github_create_pull_request",
+            "arguments": {
+              "repo": "acme/billing-service",
+              "title": "Invoice PDF download",
+              "base": "main",
+              "head": "lead/invoice-pdf"
+            }
+          }
+        },
+        "automation-run": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `send_message`?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "send_message",
+            "arguments": {
+              "target": "slack:T1/C1",
+              "text": "Weekly digest ready"
+            },
+            "task_id": "task-7f2c",
+            "task_title": "Weekly digest",
+            "standing_target": "slack:T1/C1"
+          }
+        },
+        "long-message": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `send_message`?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "send_message",
+            "arguments": {
+              "target": "slack:T1/C1",
+              "text": "aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. aisuite — last 24 hours of work (through Jul 15): 5 PRs merged covering chat-completion streaming with unified chunks across providers, multimodal input conversion, Slack collaboration improvements, human attribution for outbound posts, and repo-wide formatting. "
+            }
+          }
+        },
+        "automation-consent": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `create_scheduled_task`?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "create_scheduled_task",
+            "arguments": {
+              "title": "Weekly digest",
+              "instructions": "Summarize the week and post it.",
+              "cron": "0 9 * * 1",
+              "permissions": [
+                {
+                  "tool": "send_message",
+                  "target": "slack:T1/C1",
+                  "access": "write"
+                },
+                {
+                  "tool": "github_list_commits",
+                  "target": "rohit/agent-platform",
+                  "access": "read"
+                }
+              ]
+            }
+          }
+        },
+        "long-command": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "Apply the bucket policy change",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "set -euo pipefail\ncd infra\nterraform init -backend-config=envs/demo.backend.hcl\nterraform plan -var-file=envs/demo.tfvars -out=plan.bin\nterraform show -json plan.bin > plan.json\njq '[.resource_changes[] | select(.change.actions | index(\"delete\"))] | length' plan.json\nterraform apply plan.bin"
+            }
+          }
+        },
+        "minimal": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `run_shell`?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "run_shell",
+            "arguments": {
+              "command": "ls"
+            }
+          }
+        }
+      }
+    },
+    "plan": {
+      "event": "plan_proposed",
+      "canonical": "short-plan",
+      "states": {
+        "short-plan": {
+          "plan": "1. Add `GET /invoices/:id/pdf` to the API.\n2. Add the download button to the invoice drawer.\n3. Write tests for both and run the suites."
+        },
+        "long-plan": {
+          "plan": "## Goal\nEvery invoice gets a PDF download.\n\n## Steps\n1. **API** — add `GET /invoices/:id/pdf`. Stream the file from S3 with the billing role.\n   - 404 when `pdf_key` is null\n   - 403 for another account's invoice\n2. **Worker** — backfill statements for seeded invoices:\n\n```bash\npython -m worker statements --missing-only\n```\n\n3. **Web** — a download button in the invoice drawer, disabled while the statement renders.\n4. **Tests** — API (happy path, missing file, foreign account), UI (button and error toast).\n\n## Risks\n- The bucket policy in `infra/storage.tf` is wider than it should be; I will not touch it in this change.\n- Rendering is slow for accounts with more than 500 meters.\n\n## Out of scope\nEmailing the PDF."
+        },
+        "minimal": {
+          "plan": ""
+        }
+      },
+      "inbox": {
+        "short-plan": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the plan?",
+          "body": "1. Add `GET /invoices/:id/pdf` to the API.\n2. Add the download button to the invoice drawer.\n3. Write tests for both and run the suites.",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true
+        },
+        "long-plan": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the plan?",
+          "body": "## Goal\nEvery invoice gets a PDF download.\n\n## Steps\n1. **API** — add `GET /invoices/:id/pdf`. Stream the file from S3 with the billing role.\n   - 404 when `pdf_key` is null\n   - 403 for another account's invoice\n2. **Worker** — backfill statements for seeded invoices:\n\n```bash\npython -m worker statements --missing-only\n```\n\n3. **Web** — a download button in the invoice drawer, disabled while the statement renders.\n4. **Tests** — API (happy path, missing file, foreign account), UI (button and error toast).\n\n## Risks\n- The bucket policy in `infra/storage.tf` is wider than it should be; I will not touch it in this change.\n- Rendering is slow for accounts with more than 500 meters.\n\n## Out of scope\nEmailing the PDF.",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true
+        },
+        "minimal": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the plan?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true
+        }
+      }
+    },
+    "team-request": {
+      "event": "team_proposed",
+      "canonical": "lead-suggested-github",
+      "states": {
+        "lead-suggested-github": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the branch and opens the PR"
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [
+            "linear",
+            "slack"
+          ],
+          "enable_chat": false,
+          "note": "Two workers: one builds, one verifies."
+        },
+        "nothing-suggested": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [
+            "linear"
+          ],
+          "enable_chat": false,
+          "note": ""
+        },
+        "beyond-usual-set": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github",
+                "jira"
+              ],
+              "connector_reasons": {
+                "github": "pushes the branch and opens the PR",
+                "jira": "you asked: \"track the work in Jira, ticket BILL-212\""
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [
+            "jira",
+            "linear",
+            "slack"
+          ],
+          "enable_chat": true,
+          "note": "nia updates BILL-212 as the work moves."
+        },
+        "no-connectors-available": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [],
+            "test-worker": []
+          },
+          "other_connected": [],
+          "enable_chat": false,
+          "note": ""
+        },
+        "model-fallback": {
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "model": "anthropic:claude-opus-4-8",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "reason": "implementation",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the branch and opens the PR"
+              }
+            },
+            {
+              "persona": "design-worker",
+              "name": "webb",
+              "model": "anthropic:claude-sonnet-4-8",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "reason": "UI polish"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "model": "anthropic:claude-sonnet-4-8",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine, so checks will use the lead's model (Claude Sonnet 4.8).",
+              "reason": "verifies against acceptance criteria"
+            }
+          ],
+          "enable_chat": false,
+          "note": "Three workers cover the plan; checks verifies before anything closes.",
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "design-worker": [],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [
+            "linear"
+          ],
+          "lead_mode": "interactive",
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "design-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": []
+          },
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "anthropic:claude-haiku-4-8",
+              "label": "Claude Haiku 4.8"
+            }
+          ],
+          "lead_model": "anthropic:claude-sonnet-4-8"
+        },
+        "non-recommended-model": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "model": "ollama:qwen3-coder:30b"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [],
+          "enable_chat": false,
+          "note": ""
+        },
+        "old-server": {
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds it"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Verifies it"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": []
+          },
+          "enable_chat": false,
+          "note": ""
+        },
+        "old-server-raw-model-ids": {
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "model": "anthropic:claude-opus-4-8",
+              "reason": "Implements the api/ authorization fix and the web/ button gating for issue #3."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "model": "anthropic:claude-opus-4-8",
+              "reason": "Independently verifies the fix and proves the 403 + owner/staff paths with API tests."
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "enable_chat": true,
+          "note": "Two workers for issue #3, as requested: nia implements the api/ + web/ fix, checks independently proves the 403 and owner/staff paths with API tests. Chat enabled so nia and checks can align on handler status codes."
+        },
+        "unknown-lead-mode": {
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [],
+          "enable_chat": false,
+          "note": ""
+        },
+        "long-note": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the branch and opens the PR"
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [
+            "linear"
+          ],
+          "enable_chat": true,
+          "note": "The issue asks for a PDF download on every invoice. nia adds GET /invoices/:id/pdf to the API, streams the stored statement from S3 with the billing role, and adds the button to the invoice drawer. checks writes API tests for the happy path, a missing file and a foreign account, plus a UI test for the button, then runs all three suites. I review both branches and open one pull request against main when the suite is green."
+        },
+        "one-worker": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the branch and opens the PR"
+              }
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ]
+          },
+          "other_connected": [],
+          "enable_chat": false,
+          "note": "Small change; one worker is enough."
+        },
+        "six-workers": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the PDF endpoint and the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the API branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "omar",
+              "reason": "Builds the web client changes",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes the web branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "lena",
+              "reason": "Updates the statements worker",
+              "resolved_model": "anthropic:claude-opus-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks",
+              "reason": "Writes the API and UI tests, runs the suite",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look",
+              "reason": "Reviews the three branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8"
+            },
+            {
+              "persona": "docs-worker",
+              "name": "scribe",
+              "reason": "Updates the runbook and the API spec",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ],
+            "review-worker": [
+              "github"
+            ],
+            "docs-worker": []
+          },
+          "other_connected": [
+            "linear",
+            "slack"
+          ],
+          "enable_chat": true,
+          "note": "Three builders in parallel, then tests, review and docs."
+        },
+        "twelve-workers": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the invoice PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "omar",
+              "reason": "Builds the statement renderer",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "lena",
+              "reason": "Builds the rate limiting on the PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "kofi",
+              "reason": "Builds the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "mei",
+              "reason": "Builds the error toasts",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "ravi",
+              "reason": "Builds the meter import job",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-1",
+              "reason": "Tests builders 1 and 2",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-2",
+              "reason": "Tests builders 3 and 4",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-3",
+              "reason": "Tests builders 5 and 6",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-1",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-2",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "docs-worker",
+              "name": "scribe",
+              "reason": "Keeps the runbook and the API spec current",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ],
+            "review-worker": [
+              "github"
+            ],
+            "docs-worker": []
+          },
+          "other_connected": [
+            "linear",
+            "slack"
+          ],
+          "enable_chat": true,
+          "note": "Six builders in parallel, one tester per two builders, two reviewers, one writer."
+        },
+        "twenty-four-workers": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the invoice PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "omar",
+              "reason": "Builds the statement renderer",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "lena",
+              "reason": "Builds the rate limiting on the PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "kofi",
+              "reason": "Builds the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "mei",
+              "reason": "Builds the error toasts",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "ravi",
+              "reason": "Builds the meter import job",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "sara",
+              "reason": "Builds the usage rollups",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "tomas",
+              "reason": "Builds the tariff table migration",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "yuki",
+              "reason": "Builds the account search",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "amara",
+              "reason": "Builds the CSV export",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "dev",
+              "reason": "Builds the audit log for downloads",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "elif",
+              "reason": "Builds the retry policy for S3 reads",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-1",
+              "reason": "Tests builders 1 and 2",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-2",
+              "reason": "Tests builders 3 and 4",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-3",
+              "reason": "Tests builders 5 and 6",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-4",
+              "reason": "Tests builders 7 and 8",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-5",
+              "reason": "Tests builders 9 and 10",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-6",
+              "reason": "Tests builders 11 and 12",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-1",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-2",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-3",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "review-worker",
+              "name": "second-look-4",
+              "reason": "Reviews finished branches before the PR",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "comments on the branch diff"
+              }
+            },
+            {
+              "persona": "docs-worker",
+              "name": "scribe",
+              "reason": "Keeps the runbook and the API spec current",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "docs-worker",
+              "name": "scribe-2",
+              "reason": "Keeps the runbook and the API spec current",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ],
+            "review-worker": [
+              "github"
+            ],
+            "docs-worker": []
+          },
+          "other_connected": [
+            "linear",
+            "slack"
+          ],
+          "enable_chat": true,
+          "note": "Twelve builders, six testers, four reviewers, two writers."
+        },
+        "mixed-within-a-role": {
+          "lead_mode": "auto-approve",
+          "lead_model": "anthropic:claude-sonnet-4-8",
+          "runnable_models": [
+            {
+              "id": "anthropic:claude-opus-4-8",
+              "label": "Claude Opus 4.8"
+            },
+            {
+              "id": "anthropic:claude-sonnet-4-8",
+              "label": "Claude Sonnet 4.8"
+            },
+            {
+              "id": "openai:gpt-5.2",
+              "label": "GPT-5.2"
+            },
+            {
+              "id": "ollama:qwen3-coder:30b",
+              "label": "Qwen3 Coder 30B (local)"
+            }
+          ],
+          "model_options": {
+            "swe-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "test-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "review-worker": [
+              "anthropic:claude-opus-4-8",
+              "anthropic:claude-sonnet-4-8"
+            ],
+            "docs-worker": [
+              "anthropic:claude-sonnet-4-8"
+            ]
+          },
+          "members": [
+            {
+              "persona": "swe-worker",
+              "name": "nia",
+              "reason": "Builds the invoice PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "omar",
+              "reason": "Builds the statement renderer",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "lena",
+              "reason": "Builds the rate limiting on the PDF route",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "kofi",
+              "reason": "Builds the download button",
+              "resolved_model": "anthropic:claude-opus-4-8",
+              "connectors": [],
+              "connector_reasons": {}
+            },
+            {
+              "persona": "swe-worker",
+              "name": "mei",
+              "reason": "Builds the error toasts (small change)",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "swe-worker",
+              "name": "ravi",
+              "reason": "Builds the meter import job (small change)",
+              "resolved_model": "anthropic:claude-sonnet-4-8",
+              "connectors": [
+                "github"
+              ],
+              "connector_reasons": {
+                "github": "pushes its branch"
+              }
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-1",
+              "reason": "Tests builders 1 and 2",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            },
+            {
+              "persona": "test-worker",
+              "name": "checks-2",
+              "reason": "Tests builders 3 and 4",
+              "resolved_model": "anthropic:claude-sonnet-4-8"
+            }
+          ],
+          "offer": {
+            "swe-worker": [
+              "github"
+            ],
+            "test-worker": [
+              "github"
+            ],
+            "review-worker": [
+              "github"
+            ],
+            "docs-worker": []
+          },
+          "other_connected": [
+            "linear"
+          ],
+          "enable_chat": false,
+          "note": "Four builders on the larger model for the API work; two on the smaller one for copy changes."
+        }
+      },
+      "inbox": {
+        "lead-suggested-github": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the branch and opens the PR"
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [
+              "linear",
+              "slack"
+            ],
+            "enable_chat": false,
+            "note": "Two workers: one builds, one verifies."
+          }
+        },
+        "nothing-suggested": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [
+              "linear"
+            ],
+            "enable_chat": false,
+            "note": ""
+          }
+        },
+        "beyond-usual-set": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github",
+                  "jira"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the branch and opens the PR",
+                  "jira": "you asked: \"track the work in Jira, ticket BILL-212\""
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [
+              "jira",
+              "linear",
+              "slack"
+            ],
+            "enable_chat": true,
+            "note": "nia updates BILL-212 as the work moves."
+          }
+        },
+        "no-connectors-available": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [],
+              "test-worker": []
+            },
+            "other_connected": [],
+            "enable_chat": false,
+            "note": ""
+          }
+        },
+        "model-fallback": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- design-worker (webb)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "model": "anthropic:claude-opus-4-8",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "reason": "implementation",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the branch and opens the PR"
+                }
+              },
+              {
+                "persona": "design-worker",
+                "name": "webb",
+                "model": "anthropic:claude-sonnet-4-8",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "reason": "UI polish"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "model": "anthropic:claude-sonnet-4-8",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine, so checks will use the lead's model (Claude Sonnet 4.8).",
+                "reason": "verifies against acceptance criteria"
+              }
+            ],
+            "enable_chat": false,
+            "note": "Three workers cover the plan; checks verifies before anything closes.",
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "design-worker": [],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [
+              "linear"
+            ],
+            "lead_mode": "interactive",
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "design-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": []
+            },
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "anthropic:claude-haiku-4-8",
+                "label": "Claude Haiku 4.8"
+              }
+            ],
+            "lead_model": "anthropic:claude-sonnet-4-8"
+          }
+        },
+        "non-recommended-model": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "model": "ollama:qwen3-coder:30b"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [],
+            "enable_chat": false,
+            "note": ""
+          }
+        },
+        "old-server": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds it"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Verifies it"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": []
+            },
+            "enable_chat": false,
+            "note": ""
+          }
+        },
+        "old-server-raw-model-ids": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "model": "anthropic:claude-opus-4-8",
+                "reason": "Implements the api/ authorization fix and the web/ button gating for issue #3."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "model": "anthropic:claude-opus-4-8",
+                "reason": "Independently verifies the fix and proves the 403 + owner/staff paths with API tests."
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "enable_chat": true,
+            "note": "Two workers for issue #3, as requested: nia implements the api/ + web/ fix, checks independently proves the 403 and owner/staff paths with API tests. Chat enabled so nia and checks can align on handler status codes."
+          }
+        },
+        "unknown-lead-mode": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [],
+            "enable_chat": false,
+            "note": ""
+          }
+        },
+        "long-note": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- test-worker (checks)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the branch and opens the PR"
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [
+              "linear"
+            ],
+            "enable_chat": true,
+            "note": "The issue asks for a PDF download on every invoice. nia adds GET /invoices/:id/pdf to the API, streams the stored statement from S3 with the billing role, and adds the button to the invoice drawer. checks writes API tests for the happy path, a missing file and a foreign account, plus a UI test for the button, then runs all three suites. I review both branches and open one pull request against main when the suite is green."
+          }
+        },
+        "one-worker": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the branch and opens the PR"
+                }
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ]
+            },
+            "other_connected": [],
+            "enable_chat": false,
+            "note": "Small change; one worker is enough."
+          }
+        },
+        "six-workers": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- swe-worker (omar)\n- swe-worker (lena)\n- test-worker (checks)\n- review-worker (second-look)\n- docs-worker (scribe)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the PDF endpoint and the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the API branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "omar",
+                "reason": "Builds the web client changes",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes the web branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "lena",
+                "reason": "Updates the statements worker",
+                "resolved_model": "anthropic:claude-opus-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks",
+                "reason": "Writes the API and UI tests, runs the suite",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look",
+                "reason": "Reviews the three branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8"
+              },
+              {
+                "persona": "docs-worker",
+                "name": "scribe",
+                "reason": "Updates the runbook and the API spec",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ],
+              "review-worker": [
+                "github"
+              ],
+              "docs-worker": []
+            },
+            "other_connected": [
+              "linear",
+              "slack"
+            ],
+            "enable_chat": true,
+            "note": "Three builders in parallel, then tests, review and docs."
+          }
+        },
+        "twelve-workers": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- swe-worker (omar)\n- swe-worker (lena)\n- swe-worker (kofi)\n- swe-worker (mei)\n- swe-worker (ravi)\n- test-worker (checks-1)\n- test-worker (checks-2)\n- test-worker (checks-3)\n- review-worker (second-look-1)\n- review-worker (second-look-2)\n- docs-worker (scribe)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the invoice PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "omar",
+                "reason": "Builds the statement renderer",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "lena",
+                "reason": "Builds the rate limiting on the PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "kofi",
+                "reason": "Builds the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "mei",
+                "reason": "Builds the error toasts",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "ravi",
+                "reason": "Builds the meter import job",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-1",
+                "reason": "Tests builders 1 and 2",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-2",
+                "reason": "Tests builders 3 and 4",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-3",
+                "reason": "Tests builders 5 and 6",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-1",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-2",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "docs-worker",
+                "name": "scribe",
+                "reason": "Keeps the runbook and the API spec current",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ],
+              "review-worker": [
+                "github"
+              ],
+              "docs-worker": []
+            },
+            "other_connected": [
+              "linear",
+              "slack"
+            ],
+            "enable_chat": true,
+            "note": "Six builders in parallel, one tester per two builders, two reviewers, one writer."
+          }
+        },
+        "twenty-four-workers": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- swe-worker (omar)\n- swe-worker (lena)\n- swe-worker (kofi)\n- swe-worker (mei)\n- swe-worker (ravi)\n- swe-worker (sara)\n- swe-worker (tomas)\n- swe-worker (yuki)\n- swe-worker (amara)\n- swe-worker (dev)\n- swe-worker (elif)\n- test-worker (checks-1)\n- test-worker (checks-2)\n- test-worker (checks-3)\n- test-worker (checks-4)\n- test-worker (checks-5)\n- test-worker (checks-6)\n- review-worker (second-look-1)\n- review-worker (second-look-2)\n- review-worker (second-look-3)\n- review-worker (second-look-4)\n- docs-worker (scribe)\n- docs-worker (scribe-2)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the invoice PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "omar",
+                "reason": "Builds the statement renderer",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "lena",
+                "reason": "Builds the rate limiting on the PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "kofi",
+                "reason": "Builds the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "mei",
+                "reason": "Builds the error toasts",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "ravi",
+                "reason": "Builds the meter import job",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "sara",
+                "reason": "Builds the usage rollups",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "tomas",
+                "reason": "Builds the tariff table migration",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "yuki",
+                "reason": "Builds the account search",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "amara",
+                "reason": "Builds the CSV export",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "dev",
+                "reason": "Builds the audit log for downloads",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "elif",
+                "reason": "Builds the retry policy for S3 reads",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-1",
+                "reason": "Tests builders 1 and 2",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-2",
+                "reason": "Tests builders 3 and 4",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-3",
+                "reason": "Tests builders 5 and 6",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-4",
+                "reason": "Tests builders 7 and 8",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-5",
+                "reason": "Tests builders 9 and 10",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-6",
+                "reason": "Tests builders 11 and 12",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "model_warning": "None of test-worker's recommended models can run on this machine. It will use the lead's model, Claude Sonnet 4.8."
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-1",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-2",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-3",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "review-worker",
+                "name": "second-look-4",
+                "reason": "Reviews finished branches before the PR",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "comments on the branch diff"
+                }
+              },
+              {
+                "persona": "docs-worker",
+                "name": "scribe",
+                "reason": "Keeps the runbook and the API spec current",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "docs-worker",
+                "name": "scribe-2",
+                "reason": "Keeps the runbook and the API spec current",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ],
+              "review-worker": [
+                "github"
+              ],
+              "docs-worker": []
+            },
+            "other_connected": [
+              "linear",
+              "slack"
+            ],
+            "enable_chat": true,
+            "note": "Twelve builders, six testers, four reviewers, two writers."
+          }
+        },
+        "mixed-within-a-role": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Create this team?",
+          "body": "- swe-worker (nia)\n- swe-worker (omar)\n- swe-worker (lena)\n- swe-worker (kofi)\n- swe-worker (mei)\n- swe-worker (ravi)\n- test-worker (checks-1)\n- test-worker (checks-2)",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "team",
+            "lead_mode": "auto-approve",
+            "lead_model": "anthropic:claude-sonnet-4-8",
+            "runnable_models": [
+              {
+                "id": "anthropic:claude-opus-4-8",
+                "label": "Claude Opus 4.8"
+              },
+              {
+                "id": "anthropic:claude-sonnet-4-8",
+                "label": "Claude Sonnet 4.8"
+              },
+              {
+                "id": "openai:gpt-5.2",
+                "label": "GPT-5.2"
+              },
+              {
+                "id": "ollama:qwen3-coder:30b",
+                "label": "Qwen3 Coder 30B (local)"
+              }
+            ],
+            "model_options": {
+              "swe-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "test-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "review-worker": [
+                "anthropic:claude-opus-4-8",
+                "anthropic:claude-sonnet-4-8"
+              ],
+              "docs-worker": [
+                "anthropic:claude-sonnet-4-8"
+              ]
+            },
+            "members": [
+              {
+                "persona": "swe-worker",
+                "name": "nia",
+                "reason": "Builds the invoice PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "omar",
+                "reason": "Builds the statement renderer",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "lena",
+                "reason": "Builds the rate limiting on the PDF route",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "kofi",
+                "reason": "Builds the download button",
+                "resolved_model": "anthropic:claude-opus-4-8",
+                "connectors": [],
+                "connector_reasons": {}
+              },
+              {
+                "persona": "swe-worker",
+                "name": "mei",
+                "reason": "Builds the error toasts (small change)",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "swe-worker",
+                "name": "ravi",
+                "reason": "Builds the meter import job (small change)",
+                "resolved_model": "anthropic:claude-sonnet-4-8",
+                "connectors": [
+                  "github"
+                ],
+                "connector_reasons": {
+                  "github": "pushes its branch"
+                }
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-1",
+                "reason": "Tests builders 1 and 2",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              },
+              {
+                "persona": "test-worker",
+                "name": "checks-2",
+                "reason": "Tests builders 3 and 4",
+                "resolved_model": "anthropic:claude-sonnet-4-8"
+              }
+            ],
+            "offer": {
+              "swe-worker": [
+                "github"
+              ],
+              "test-worker": [
+                "github"
+              ],
+              "review-worker": [
+                "github"
+              ],
+              "docs-worker": []
+            },
+            "other_connected": [
+              "linear"
+            ],
+            "enable_chat": false,
+            "note": "Four builders on the larger model for the API work; two on the smaller one for copy changes."
+          }
+        }
+      }
+    },
+    "worker-decision": {
+      "event": "permission_required (decide_worker_call)",
+      "canonical": "lead-denies-command",
+      "states": {
+        "lead-denies-command": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "nia",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "deny",
+            "note": "That targets the issue-1 worktree, which is already done and merged (PR #2). Your item is #3: work in the issue-3 worktree only."
+          },
+          "reason": "requires approval",
+          "category": "team",
+          "worker_call": {
+            "worker": "nia",
+            "tool": "run_shell",
+            "arguments": {
+              "command": "cd /home/user/work/billing-service/issue-1/web && npm run build",
+              "description": "Rebuild the web client"
+            },
+            "reason": "requires approval",
+            "state": "pending"
+          }
+        },
+        "lead-allows-command": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "checks",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "allow",
+            "note": "This is the red-green check the item asks for: remove the fix, see the test fail, put it back. It stays inside the issue-3 worktree."
+          },
+          "reason": "requires approval",
+          "category": "team",
+          "worker_call": {
+            "worker": "checks",
+            "tool": "run_shell",
+            "arguments": {
+              "command": "cd /home/user/work/billing-service/issue-3/api && cp src/invoices.ts /tmp/invoices.bak && sed -i 's/^      assertCanRead(claimsOf(req), invoice);$//' src/invoices.ts && npm test -- --run invoices; cp /tmp/invoices.bak src/invoices.ts",
+              "description": "Temporarily remove fix, confirm cross-account test fails, then restore"
+            },
+            "state": "pending"
+          }
+        },
+        "lead-denies-file-change": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "omar",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "deny",
+            "note": "The item is the Export button only. Rewriting the shared API client is outside it, and nia is editing the same file."
+          },
+          "reason": "requires approval",
+          "category": "team",
+          "worker_call": {
+            "worker": "omar",
+            "tool": "write_file",
+            "arguments": {
+              "path": "web/src/api.ts",
+              "content": "export async function getInvoices(params: InvoiceQuery) {\n  const res = await http.get('/v1/invoices', { params });\n  return res.data.invoices;\n}\n"
+            },
+            "state": "pending"
+          }
+        },
+        "already-answered": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "nia",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "deny",
+            "note": "That targets the issue-1 worktree, which is already done and merged (PR #2)."
+          },
+          "reason": "requires approval",
+          "category": "team",
+          "worker_call": {
+            "worker": "nia",
+            "tool": "run_shell",
+            "arguments": {
+              "command": "cd /home/user/work/billing-service/issue-1/web && npm run build"
+            },
+            "state": "resolved",
+            "resolution": "deny"
+          }
+        },
+        "long-note": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "nia",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "deny",
+            "note": "Three problems. First, it runs in the issue-1 worktree, which is merged; your item lives in issue-3. Second, it pipes a script from the network into the shell, which the item never asked for and which I cannot review from here. Third, the build it triggers would overwrite the dist folder that checks is using for the UI test right now. Re-run the build inside issue-3/web with the plain npm script instead, and tell me if that script is missing."
+          },
+          "reason": "requires approval",
+          "category": "team",
+          "worker_call": {
+            "worker": "nia",
+            "tool": "run_shell",
+            "arguments": {
+              "command": "set -euo pipefail\ncd /home/user/work/billing-service/issue-1/web\ncurl -fsSL https://example.com/setup-node.sh | bash\nnpm ci\nnpm run build\ncp -r dist ../../issue-3/web/dist\nls -la ../../issue-3/web/dist"
+            },
+            "state": "pending"
+          }
+        },
+        "old-server": {
+          "name": "decide_worker_call",
+          "arguments": {
+            "worker": "nia",
+            "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+            "decision": "deny",
+            "note": "That targets the issue-1 worktree, which is already done and merged (PR #2)."
+          },
+          "reason": "requires approval",
+          "category": "team"
+        }
+      },
+      "inbox": {
+        "lead-denies-command": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: nia · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: deny",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "nia",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "deny",
+              "note": "That targets the issue-1 worktree, which is already done and merged (PR #2). Your item is #3: work in the issue-3 worktree only."
+            },
+            "worker_call": {
+              "worker": "nia",
+              "tool": "run_shell",
+              "arguments": {
+                "command": "cd /home/user/work/billing-service/issue-1/web && npm run build",
+                "description": "Rebuild the web client"
+              },
+              "reason": "requires approval",
+              "state": "pending"
+            }
+          }
+        },
+        "lead-allows-command": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: checks · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: allow",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "checks",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "allow",
+              "note": "This is the red-green check the item asks for: remove the fix, see the test fail, put it back. It stays inside the issue-3 worktree."
+            },
+            "worker_call": {
+              "worker": "checks",
+              "tool": "run_shell",
+              "arguments": {
+                "command": "cd /home/user/work/billing-service/issue-3/api && cp src/invoices.ts /tmp/invoices.bak && sed -i 's/^      assertCanRead(claimsOf(req), invoice);$//' src/invoices.ts && npm test -- --run invoices; cp /tmp/invoices.bak src/invoices.ts",
+                "description": "Temporarily remove fix, confirm cross-account test fails, then restore"
+              },
+              "state": "pending"
+            }
+          }
+        },
+        "lead-denies-file-change": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: omar · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: deny",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "omar",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "deny",
+              "note": "The item is the Export button only. Rewriting the shared API client is outside it, and nia is editing the same file."
+            },
+            "worker_call": {
+              "worker": "omar",
+              "tool": "write_file",
+              "arguments": {
+                "path": "web/src/api.ts",
+                "content": "export async function getInvoices(params: InvoiceQuery) {\n  const res = await http.get('/v1/invoices', { params });\n  return res.data.invoices;\n}\n"
+              },
+              "state": "pending"
+            }
+          }
+        },
+        "already-answered": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: nia · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: deny",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "nia",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "deny",
+              "note": "That targets the issue-1 worktree, which is already done and merged (PR #2)."
+            },
+            "worker_call": {
+              "worker": "nia",
+              "tool": "run_shell",
+              "arguments": {
+                "command": "cd /home/user/work/billing-service/issue-1/web && npm run build"
+              },
+              "state": "resolved",
+              "resolution": "deny"
+            }
+          }
+        },
+        "long-note": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: nia · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: deny",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "nia",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "deny",
+              "note": "Three problems. First, it runs in the issue-1 worktree, which is merged; your item lives in issue-3. Second, it pipes a script from the network into the shell, which the item never asked for and which I cannot review from here. Third, the build it triggers would overwrite the dist folder that checks is using for the UI test right now. Re-run the build inside issue-3/web with the plain npm script instead, and tell me if that script is missing."
+            },
+            "worker_call": {
+              "worker": "nia",
+              "tool": "run_shell",
+              "arguments": {
+                "command": "set -euo pipefail\ncd /home/user/work/billing-service/issue-1/web\ncurl -fsSL https://example.com/setup-node.sh | bash\nnpm ci\nnpm run build\ncp -r dist ../../issue-3/web/dist\nls -la ../../issue-3/web/dist"
+              },
+              "state": "pending"
+            }
+          }
+        },
+        "old-server": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "approval",
+          "title": "Run `decide_worker_call`?",
+          "body": "requires approval\nworker: nia · call_id: c51dc4bd79f74e87b7fc59050dc41c37 · decision: deny",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "decide_worker_call",
+            "arguments": {
+              "worker": "nia",
+              "call_id": "c51dc4bd79f74e87b7fc59050dc41c37",
+              "decision": "deny",
+              "note": "That targets the issue-1 worktree, which is already done and merged (PR #2)."
+            }
+          }
+        }
+      }
+    },
+    "work-items": {
+      "event": "items_proposed",
+      "canonical": "three-items",
+      "states": {
+        "three-items": {
+          "items": [
+            {
+              "title": "Add GET /invoices/:id/pdf",
+              "criteria": "Returns the stored PDF for the caller's own invoice; 404 for a missing file; 403 for another account."
+            },
+            {
+              "title": "Download button in the invoice drawer",
+              "criteria": "The button downloads the PDF and shows an error toast when the API fails."
+            },
+            {
+              "title": "Tests for both",
+              "criteria": "API and UI tests pass in CI."
+            }
+          ],
+          "note": "Split by surface so the API and the web client can move in parallel."
+        },
+        "statements-split": {
+          "items": [
+            {
+              "title": "Statement API endpoint",
+              "criteria": "returns opening/closing balances over the chosen range; 8 endpoint tests green; malformed, missing, and reversed date ranges return 400; draft invoices are excluded from issued totals; inclusive boundaries verified end to end"
+            },
+            {
+              "title": "Statements dashboard page",
+              "criteria": "renders seeded data for Ada / Northgate; empty + error states covered"
+            },
+            {
+              "title": "Statement totals reconcile",
+              "criteria": "running balance matches invoices minus payments for the range"
+            },
+            {
+              "title": "Verification pass",
+              "criteria": "tester confirms page renders with live API data"
+            }
+          ],
+          "note": "Shared journal case: statements."
+        },
+        "seven-items": {
+          "items": [
+            {
+              "title": "Schema: add invoices.pdf_generated_at",
+              "criteria": "Migration applies cleanly on an empty database and on the seeded one; rollback drops only the new column."
+            },
+            {
+              "title": "Worker: regenerate missing statements",
+              "criteria": "A nightly job finds invoices with a null pdf_key, renders the statement, uploads it under statements/<account>/<invoice>.pdf and records the key. Re-running the job makes no second upload.",
+              "description": "The seed data ships with null keys; the first run fills them."
+            },
+            {
+              "title": "API: GET /invoices/:id/pdf",
+              "criteria": "Streams the file with the billing role; 404 when there is no key; 403 for another account's invoice."
+            },
+            {
+              "title": "API: rate-limit the PDF route",
+              "criteria": "More than 30 requests a minute from one account returns 429 with a Retry-After header."
+            },
+            {
+              "title": "Web: download button",
+              "criteria": "Visible only when the invoice has a PDF; disabled with a tooltip while the statement is still rendering."
+            },
+            {
+              "title": "Web: error states",
+              "criteria": "A failed download shows a toast and leaves the drawer open."
+            },
+            {
+              "title": "Docs: runbook entry",
+              "criteria": "The runbook explains how to regenerate one statement by hand."
+            }
+          ],
+          "note": ""
+        },
+        "done-when-prefix": {
+          "items": [
+            {
+              "title": "Cap the retry backoff",
+              "criteria": "Done when: no wait exceeds maxDelayMs, with a unit test for the cap."
+            },
+            {
+              "title": "Log the final attempt",
+              "criteria": "done when the last failure is logged once at warn level"
+            }
+          ],
+          "note": ""
+        },
+        "minimal": {
+          "items": [
+            {
+              "title": "Fix the typo in the README",
+              "criteria": "The heading reads “Billing service”."
+            }
+          ]
+        }
+      },
+      "inbox": {
+        "three-items": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the proposed work items?",
+          "body": "- Add GET /invoices/:id/pdf\n- Download button in the invoice drawer\n- Tests for both",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "items",
+            "items": [
+              {
+                "title": "Add GET /invoices/:id/pdf",
+                "criteria": "Returns the stored PDF for the caller's own invoice; 404 for a missing file; 403 for another account."
+              },
+              {
+                "title": "Download button in the invoice drawer",
+                "criteria": "The button downloads the PDF and shows an error toast when the API fails."
+              },
+              {
+                "title": "Tests for both",
+                "criteria": "API and UI tests pass in CI."
+              }
+            ],
+            "note": "Split by surface so the API and the web client can move in parallel."
+          }
+        },
+        "statements-split": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the proposed work items?",
+          "body": "- Statement API endpoint\n- Statements dashboard page\n- Statement totals reconcile\n- Verification pass",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "items",
+            "items": [
+              {
+                "title": "Statement API endpoint",
+                "criteria": "returns opening/closing balances over the chosen range; 8 endpoint tests green; malformed, missing, and reversed date ranges return 400; draft invoices are excluded from issued totals; inclusive boundaries verified end to end"
+              },
+              {
+                "title": "Statements dashboard page",
+                "criteria": "renders seeded data for Ada / Northgate; empty + error states covered"
+              },
+              {
+                "title": "Statement totals reconcile",
+                "criteria": "running balance matches invoices minus payments for the range"
+              },
+              {
+                "title": "Verification pass",
+                "criteria": "tester confirms page renders with live API data"
+              }
+            ],
+            "note": "Shared journal case: statements."
+          }
+        },
+        "seven-items": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the proposed work items?",
+          "body": "- Schema: add invoices.pdf_generated_at\n- Worker: regenerate missing statements\n- API: GET /invoices/:id/pdf\n- API: rate-limit the PDF route\n- Web: download button\n- Web: error states\n- Docs: runbook entry",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "items",
+            "items": [
+              {
+                "title": "Schema: add invoices.pdf_generated_at",
+                "criteria": "Migration applies cleanly on an empty database and on the seeded one; rollback drops only the new column."
+              },
+              {
+                "title": "Worker: regenerate missing statements",
+                "criteria": "A nightly job finds invoices with a null pdf_key, renders the statement, uploads it under statements/<account>/<invoice>.pdf and records the key. Re-running the job makes no second upload.",
+                "description": "The seed data ships with null keys; the first run fills them."
+              },
+              {
+                "title": "API: GET /invoices/:id/pdf",
+                "criteria": "Streams the file with the billing role; 404 when there is no key; 403 for another account's invoice."
+              },
+              {
+                "title": "API: rate-limit the PDF route",
+                "criteria": "More than 30 requests a minute from one account returns 429 with a Retry-After header."
+              },
+              {
+                "title": "Web: download button",
+                "criteria": "Visible only when the invoice has a PDF; disabled with a tooltip while the statement is still rendering."
+              },
+              {
+                "title": "Web: error states",
+                "criteria": "A failed download shows a toast and leaves the drawer open."
+              },
+              {
+                "title": "Docs: runbook entry",
+                "criteria": "The runbook explains how to regenerate one statement by hand."
+              }
+            ],
+            "note": ""
+          }
+        },
+        "done-when-prefix": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the proposed work items?",
+          "body": "- Cap the retry backoff\n- Log the final attempt",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "items",
+            "items": [
+              {
+                "title": "Cap the retry backoff",
+                "criteria": "Done when: no wait exceeds maxDelayMs, with a unit test for the cap."
+              },
+              {
+                "title": "Log the final attempt",
+                "criteria": "done when the last failure is logged once at warn level"
+              }
+            ],
+            "note": ""
+          }
+        },
+        "minimal": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "plan",
+          "title": "Approve the proposed work items?",
+          "body": "- Fix the typo in the README",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "gate": "items",
+            "items": [
+              {
+                "title": "Fix the typo in the README",
+                "criteria": "The heading reads “Billing service”."
+              }
+            ],
+            "note": ""
+          }
+        }
+      }
+    },
+    "connector-request": {
+      "event": "connector_requested",
+      "canonical": "connect-jira",
+      "states": {
+        "connect-jira": {
+          "request": "connect",
+          "connector": "jira",
+          "worker": "",
+          "reason": "You asked to \"track the work in Jira\", and Jira is not connected on this machine."
+        },
+        "connect-linear": {
+          "request": "connect",
+          "connector": "linear",
+          "worker": "",
+          "reason": "keep the tracker in step with the board"
+        },
+        "grant-github": {
+          "request": "grant",
+          "connector": "github",
+          "worker": "nia",
+          "reason": "push the branch for #1"
+        },
+        "long-reason": {
+          "request": "grant",
+          "connector": "github",
+          "worker": "checks",
+          "reason": "checks found that the UI test needs the preview deployment's URL, which GitHub posts as a deployment status on the pull request. Reading that status needs the GitHub connector; without it checks would have to guess the URL from the branch name, which has been wrong twice this week."
+        },
+        "minimal": {
+          "request": "connect",
+          "connector": "slack"
+        }
+      },
+      "inbox": {
+        "connect-jira": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "connector",
+          "title": "Connect jira?",
+          "body": "You asked to \"track the work in Jira\", and Jira is not connected on this machine.",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "request": "connect",
+            "connector": "jira",
+            "worker": ""
+          }
+        },
+        "connect-linear": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "connector",
+          "title": "Connect linear?",
+          "body": "keep the tracker in step with the board",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "request": "connect",
+            "connector": "linear",
+            "worker": ""
+          }
+        },
+        "grant-github": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "connector",
+          "title": "Give nia access to github?",
+          "body": "push the branch for #1",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "request": "grant",
+            "connector": "github",
+            "worker": "nia"
+          }
+        },
+        "long-reason": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "connector",
+          "title": "Give checks access to github?",
+          "body": "checks found that the UI test needs the preview deployment's URL, which GitHub posts as a deployment status on the pull request. Reading that status needs the GitHub connector; without it checks would have to guess the URL from the branch name, which has been wrong twice this week.",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "request": "grant",
+            "connector": "github",
+            "worker": "checks"
+          }
+        },
+        "minimal": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "connector",
+          "title": "Connect slack?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "request": "connect",
+            "connector": "slack",
+            "worker": ""
+          }
+        }
+      }
+    },
+    "question": {
+      "event": "question_requested",
+      "canonical": "quick-replies",
+      "states": {
+        "quick-replies": {
+          "question": "Which environment should I restart?",
+          "options": [
+            "staging",
+            "production"
+          ],
+          "allow_text": true,
+          "multi": false
+        },
+        "rich-options": {
+          "header": "PDF storage",
+          "question": "Where should generated invoice PDFs live?",
+          "options": [
+            {
+              "label": "S3, private bucket",
+              "description": "Served through the API with the billing role. Matches how statements work today.",
+              "recommended": true
+            },
+            {
+              "label": "Database (bytea)",
+              "description": "No new infrastructure, but invoices average 180 KB and the table is already large."
+            },
+            {
+              "label": "Generate on demand",
+              "description": "Nothing stored; every download costs a render of about two seconds."
+            }
+          ],
+          "allow_text": true,
+          "multi": false
+        },
+        "options-with-preview": {
+          "header": "Error shape",
+          "question": "Which error body should the PDF route return?",
+          "options": [
+            {
+              "label": "Problem JSON",
+              "description": "RFC 9457, as the newer routes do.",
+              "recommended": true,
+              "preview": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Invoice has no PDF\",\n  \"status\": 404\n}"
+            },
+            {
+              "label": "Legacy envelope",
+              "description": "What the web client parses today.",
+              "preview": "{\n  \"error\": {\n    \"code\": \"NO_PDF\",\n    \"message\": \"Invoice has no PDF\"\n  }\n}"
+            }
+          ],
+          "allow_text": false,
+          "multi": false
+        },
+        "multi-select": {
+          "question": "Which suites should run before I open the pull request?",
+          "options": [
+            "API",
+            "Web",
+            "Worker",
+            "Terraform validate"
+          ],
+          "allow_text": true,
+          "multi": true
+        },
+        "grouped": {
+          "question": "",
+          "questions": [
+            {
+              "header": "Scope",
+              "question": "Should the download work for draft invoices too?",
+              "options": [
+                "Issued only",
+                "Drafts too"
+              ],
+              "allow_text": true
+            },
+            {
+              "header": "Naming",
+              "question": "What should the file be called?",
+              "options": [
+                "invoice-<number>.pdf",
+                "<account>-<period>.pdf"
+              ],
+              "allow_text": true
+            },
+            {
+              "header": "Rollout",
+              "question": "Ship behind a flag?",
+              "options": [
+                {
+                  "label": "Yes",
+                  "description": "Off by default; on for the demo account.",
+                  "recommended": true
+                },
+                {
+                  "label": "No",
+                  "description": "Visible to every account at once."
+                }
+              ],
+              "allow_text": false
+            }
+          ]
+        },
+        "minimal": {
+          "question": "What should the branch be called?"
+        }
+      },
+      "inbox": {
+        "quick-replies": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "Which environment should I restart?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [
+            "staging",
+            "production"
+          ],
+          "allow_text": true,
+          "multi": false,
+          "header": "",
+          "questions": []
+        },
+        "rich-options": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "Where should generated invoice PDFs live?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [
+            {
+              "label": "S3, private bucket",
+              "description": "Served through the API with the billing role. Matches how statements work today.",
+              "recommended": true
+            },
+            {
+              "label": "Database (bytea)",
+              "description": "No new infrastructure, but invoices average 180 KB and the table is already large."
+            },
+            {
+              "label": "Generate on demand",
+              "description": "Nothing stored; every download costs a render of about two seconds."
+            }
+          ],
+          "allow_text": true,
+          "multi": false,
+          "header": "PDF storage",
+          "questions": []
+        },
+        "options-with-preview": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "Which error body should the PDF route return?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [
+            {
+              "label": "Problem JSON",
+              "description": "RFC 9457, as the newer routes do.",
+              "recommended": true,
+              "preview": "{\n  \"type\": \"about:blank\",\n  \"title\": \"Invoice has no PDF\",\n  \"status\": 404\n}"
+            },
+            {
+              "label": "Legacy envelope",
+              "description": "What the web client parses today.",
+              "preview": "{\n  \"error\": {\n    \"code\": \"NO_PDF\",\n    \"message\": \"Invoice has no PDF\"\n  }\n}"
+            }
+          ],
+          "allow_text": false,
+          "multi": false,
+          "header": "Error shape",
+          "questions": []
+        },
+        "multi-select": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "Which suites should run before I open the pull request?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [
+            "API",
+            "Web",
+            "Worker",
+            "Terraform validate"
+          ],
+          "allow_text": true,
+          "multi": true,
+          "header": "",
+          "questions": []
+        },
+        "grouped": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "Should the download work for draft invoices too?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [
+            "Issued only",
+            "Drafts too"
+          ],
+          "allow_text": true,
+          "multi": false,
+          "header": "Scope",
+          "questions": [
+            {
+              "header": "Scope",
+              "question": "Should the download work for draft invoices too?",
+              "options": [
+                "Issued only",
+                "Drafts too"
+              ],
+              "allow_text": true
+            },
+            {
+              "header": "Naming",
+              "question": "What should the file be called?",
+              "options": [
+                "invoice-<number>.pdf",
+                "<account>-<period>.pdf"
+              ],
+              "allow_text": true
+            },
+            {
+              "header": "Rollout",
+              "question": "Ship behind a flag?",
+              "options": [
+                {
+                  "label": "Yes",
+                  "description": "Off by default; on for the demo account.",
+                  "recommended": true
+                },
+                {
+                  "label": "No",
+                  "description": "Visible to every account at once."
+                }
+              ],
+              "allow_text": false
+            }
+          ]
+        },
+        "minimal": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "question",
+          "title": "What should the branch be called?",
+          "body": "",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "options": [],
+          "allow_text": true,
+          "multi": false,
+          "header": "",
+          "questions": []
+        }
+      }
+    },
+    "directory-request": {
+      "event": "directory_requested",
+      "canonical": "read-only",
+      "states": {
+        "read-only": {
+          "reason": "Compare the statement template with the one marketing uses",
+          "path": "/Users/sam/Documents/brand/templates",
+          "writable": false,
+          "primary": false
+        },
+        "writable": {
+          "reason": "Save the regenerated statements next to the originals",
+          "path": "/Users/sam/SpaceSol/statements",
+          "writable": true,
+          "primary": false
+        },
+        "make-workspace": {
+          "reason": "The repository lives here; I need it as the workspace to run the tests",
+          "path": "/Users/sam/fleet/demo-universe/billing-service",
+          "writable": true,
+          "primary": true
+        },
+        "no-path": {
+          "reason": "I need somewhere to put the exported CSV files"
+        }
+      },
+      "inbox": {
+        "read-only": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "directory",
+          "title": "Grant access to a folder?",
+          "body": "Compare the statement template with the one marketing uses",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "path": "/Users/sam/Documents/brand/templates",
+            "writable": false,
+            "primary": false
+          }
+        },
+        "writable": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "directory",
+          "title": "Grant access to a folder?",
+          "body": "Save the regenerated statements next to the originals",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "path": "/Users/sam/SpaceSol/statements",
+            "writable": true,
+            "primary": false
+          }
+        },
+        "make-workspace": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "directory",
+          "title": "Grant access to a folder?",
+          "body": "The repository lives here; I need it as the workspace to run the tests",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "path": "/Users/sam/fleet/demo-universe/billing-service",
+            "writable": true,
+            "primary": true
+          }
+        },
+        "no-path": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "directory",
+          "title": "Grant access to a folder?",
+          "body": "I need somewhere to put the exported CSV files",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "path": "",
+            "writable": false,
+            "primary": false
+          }
+        }
+      }
+    },
+    "tool-request": {
+      "event": "tool_requested",
+      "canonical": "installable",
+      "states": {
+        "installable": {
+          "name": "gitleaks",
+          "reason": "scan the git history for committed secrets",
+          "installable": true,
+          "version": "8.30.1",
+          "summary": "scans git history and the working tree for committed secrets",
+          "source": "github.com/gitleaks"
+        },
+        "not-installable": {
+          "name": "somescanner",
+          "reason": "scan the Terraform for misconfigurations"
+        },
+        "long-reason": {
+          "name": "trivy",
+          "reason": "check the three container images for known vulnerabilities before the pull request goes up, because the API image moved to a new Node base this week and the last scan predates that change",
+          "installable": true,
+          "version": "0.56.2",
+          "summary": "scans container images, filesystems and IaC for vulnerabilities and misconfigurations",
+          "source": "github.com/aquasecurity/trivy"
+        }
+      },
+      "inbox": {
+        "installable": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "tool",
+          "title": "Install gitleaks?",
+          "body": "scan the git history for committed secrets",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "gitleaks",
+            "installable": true,
+            "version": "8.30.1",
+            "summary": "scans git history and the working tree for committed secrets",
+            "url": "",
+            "source": "github.com/gitleaks"
+          }
+        },
+        "not-installable": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "tool",
+          "title": "Install somescanner?",
+          "body": "scan the Terraform for misconfigurations",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "somescanner",
+            "installable": false,
+            "version": "",
+            "summary": "",
+            "url": "",
+            "source": ""
+          }
+        },
+        "long-reason": {
+          "id": "gallery-item",
+          "session_id": "gallery-session",
+          "kind": "tool",
+          "title": "Install trivy?",
+          "body": "check the three container images for known vulnerabilities before the pull request goes up, because the API image moved to a new Node base this week and the last scan predates that change",
+          "state": "pending",
+          "resolution": null,
+          "inbox": "default",
+          "created_at": "2026-09-17T09:30:00Z",
+          "resolved_at": null,
+          "visibility": "inbox",
+          "session_title": "Mention #3 · Invoice PDF download",
+          "session_agent": "swe-lead",
+          "session_exists": true,
+          "data": {
+            "tool": "trivy",
+            "installable": true,
+            "version": "0.56.2",
+            "summary": "scans container images, filesystems and IaC for vulnerabilities and misconfigurations",
+            "url": "",
+            "source": "github.com/aquasecurity/trivy"
+          }
+        }
+      }
+    },
+    "board-wake": {
+      "event": "turn_start (source.connector = board)",
+      "canonical": "waiting-and-review",
+      "states": {
+        "waiting-and-review": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "/Users/test/OpenWorker/launch-note",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "⏰ Board wake — your team needs decisions",
+            "board": {
+              "rows": [
+                {
+                  "item": 5,
+                  "title": "api: prove PDF 403 for other accounts and 200 for owner/staff with tests",
+                  "actor": "nia",
+                  "kind": "comment",
+                  "note": "@checks PDF authz landed on issue-3 (commit fbc2190). GET /v1/invoices/:id/pdf status contract: 401 no token, 403 other account (assertCanRead), 404 unknown id or no pdf_key, 200 owner and staff. Test against that."
+                },
+                {
+                  "item": 4,
+                  "title": "api + web: enforce owner/staff authorization on invoice PDF download",
+                  "actor": "swe-lead:3fbd018c",
+                  "kind": "comment",
+                  "note": "Received in review. Holding here until checks completes the independent verification in #5 (API gate + 403/owner-200/staff-200 assertions against the real handler)."
+                },
+                {
+                  "item": 4,
+                  "title": "api + web: enforce owner/staff authorization on invoice PDF download",
+                  "actor": "nia",
+                  "kind": "moved",
+                  "to": "review",
+                  "note": "Done on branch issue-3 (commit fbc2190). API: GET /:id/pdf now runs assertCanRead(claimsOf(req), invoice.account_id) after loadInvoice, before the S3 read. Web: the Download PDF button renders only for the invoice's owner or staff. Lint and build green in api/ and web/."
+                },
+                {
+                  "item": 5,
+                  "title": "api: prove PDF 403 for other accounts and 200 for owner/staff with tests",
+                  "actor": "checks",
+                  "kind": "waiting",
+                  "tool": "run_shell",
+                  "prompt_id": "c6e33538745f4a2d8689da0a4ba436cf",
+                  "note": "requires approval\ncommand: cd /home/user/work/billing-service/issue-3/api && cp src/invoices.ts /tmp/… · description: Temporarily remove fix, confirm cross-account test fails, then restore"
+                },
+                {
+                  "kind": "chat",
+                  "actor": "nia",
+                  "note": "@checks @lead I don't have decide_worker_call (worker, not lead), but for the record I endorse checks' mutation check — back up src/invoices.ts, remove the assert, see the 403 test go red, restore."
+                }
+              ]
+            }
+          }
+        },
+        "review-and-filed": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "/Users/test/OpenWorker/launch-note",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "⏰ Board wake — your team needs decisions:\n- #2 moved to review by webb",
+            "board": {
+              "rows": [
+                {
+                  "kind": "moved",
+                  "item": 2,
+                  "title": "Statements page",
+                  "actor": "webb",
+                  "to": "review",
+                  "note": "Ready for review on feat/customer-statements, commit 029f9f7. Build verified; final verdict stays with the tester."
+                },
+                {
+                  "kind": "filed",
+                  "item": 5,
+                  "title": "Follow-up: rate limit",
+                  "actor": "nia"
+                }
+              ]
+            }
+          }
+        },
+        "routine": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "/Users/test/OpenWorker/launch-note",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "Board wake — updates",
+            "board": {
+              "rows": [
+                {
+                  "kind": "claimed",
+                  "item": 1,
+                  "title": "Statement API endpoint",
+                  "actor": "nia"
+                },
+                {
+                  "kind": "claimed",
+                  "item": 3,
+                  "title": "Statement totals reconcile",
+                  "actor": "omar"
+                },
+                {
+                  "kind": "comment",
+                  "item": 1,
+                  "title": "Statement API endpoint",
+                  "actor": "nia",
+                  "note": "Range parsing is done; starting on the totals."
+                }
+              ]
+            }
+          }
+        },
+        "blocked-and-chat": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "/Users/test/OpenWorker/launch-note",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "⏰ Board wake — your team needs decisions",
+            "board": {
+              "rows": [
+                {
+                  "kind": "moved",
+                  "item": 4,
+                  "title": "Verification pass",
+                  "actor": "checks",
+                  "to": "blocked",
+                  "note": "The seeded database has no invoices for Northgate in March, so the range test cannot pass. Need a seed change or a different range."
+                },
+                {
+                  "kind": "chat",
+                  "actor": "checks",
+                  "note": "@lead the March seed data is missing — who owns db/seed.sql?"
+                },
+                {
+                  "kind": "moved",
+                  "item": 1,
+                  "title": "Statement API endpoint",
+                  "actor": "nia",
+                  "to": "done"
+                },
+                {
+                  "kind": "assigned",
+                  "item": 6,
+                  "title": "Seed data for March"
+                }
+              ]
+            }
+          }
+        },
+        "many-rows": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "/Users/test/OpenWorker/launch-note",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "⏰ Board wake — your team needs decisions",
+            "board": {
+              "rows": [
+                {
+                  "kind": "moved",
+                  "item": 1,
+                  "title": "Work item 1",
+                  "actor": "worker-1",
+                  "to": "review",
+                  "note": "Ready for review; tests green."
+                },
+                {
+                  "kind": "claimed",
+                  "item": 2,
+                  "title": "Work item 2",
+                  "actor": "worker-2"
+                },
+                {
+                  "kind": "moved",
+                  "item": 3,
+                  "title": "Work item 3",
+                  "actor": "worker-3",
+                  "to": "done"
+                },
+                {
+                  "kind": "comment",
+                  "item": 4,
+                  "title": "Work item 4",
+                  "actor": "worker-4",
+                  "note": "Halfway; no blockers."
+                },
+                {
+                  "kind": "moved",
+                  "item": 5,
+                  "title": "Work item 5",
+                  "actor": "worker-5",
+                  "to": "review",
+                  "note": "Ready for review; tests green."
+                },
+                {
+                  "kind": "claimed",
+                  "item": 6,
+                  "title": "Work item 6",
+                  "actor": "worker-6"
+                },
+                {
+                  "kind": "moved",
+                  "item": 7,
+                  "title": "Work item 7",
+                  "actor": "worker-7",
+                  "to": "done"
+                },
+                {
+                  "kind": "comment",
+                  "item": 8,
+                  "title": "Work item 8",
+                  "actor": "worker-8",
+                  "note": "Halfway; no blockers."
+                },
+                {
+                  "kind": "moved",
+                  "item": 9,
+                  "title": "Work item 9",
+                  "actor": "worker-9",
+                  "to": "review",
+                  "note": "Ready for review; tests green."
+                },
+                {
+                  "kind": "claimed",
+                  "item": 10,
+                  "title": "Work item 10",
+                  "actor": "worker-10"
+                },
+                {
+                  "kind": "moved",
+                  "item": 11,
+                  "title": "Work item 11",
+                  "actor": "worker-11",
+                  "to": "done"
+                },
+                {
+                  "kind": "comment",
+                  "item": 12,
+                  "title": "Work item 12",
+                  "actor": "worker-12",
+                  "note": "Halfway; no blockers."
+                }
+              ]
+            }
+          }
+        },
+        "minimal": {
+          "source": {
+            "connector": "board",
+            "kind": "channel",
+            "channel_id": "board",
+            "channel_name": "Team board",
+            "sender_id": "board",
+            "sender_name": "Board",
+            "ts": 1789900000,
+            "text": "Board wake"
+          }
+        }
+      },
+      "inbox": {}
+    },
+    "connector-message": {
+      "event": "turn_start (source)",
+      "canonical": "slack-channel",
+      "states": {
+        "slack-channel": {
+          "source": {
+            "connector": "slack",
+            "kind": "channel",
+            "channel_id": "C0BD7KZ1AH5",
+            "channel_name": "#billing-eng",
+            "sender_id": "U04ABCD12",
+            "sender_name": "Jordan Lee",
+            "ts": 1789900000,
+            "text": "Can the staging deploy go out before the 3pm demo? The invoice PDF change needs to be on it."
+          }
+        },
+        "slack-dm": {
+          "source": {
+            "connector": "slack",
+            "kind": "dm",
+            "channel_id": "D07XYZ",
+            "channel_name": "Direct message",
+            "sender_id": "U04ABCD12",
+            "sender_name": "Jordan Lee",
+            "ts": 1789900000,
+            "text": "quick one — what's the status of BILL-212?"
+          }
+        },
+        "github-mention": {
+          "source": {
+            "connector": "github",
+            "kind": "channel",
+            "channel_id": "acme/billing-service#3",
+            "channel_name": "acme/billing-service #3",
+            "sender_id": "demo-user",
+            "sender_name": "demo-user",
+            "ts": 1789900000,
+            "text": "[lead] Add a PDF download to every invoice in the drawer. The statements worker already renders them; the API needs a route and the web client a button."
+          }
+        },
+        "long-message": {
+          "source": {
+            "connector": "slack",
+            "kind": "channel",
+            "channel_id": "C0BD7KZ1AH5",
+            "channel_name": "#billing-eng",
+            "sender_id": "U04ABCD12",
+            "sender_name": "Jordan Lee",
+            "ts": 1789900000,
+            "text": "Three things from the customer call:\n\n1. They want the PDF to carry the PO number in the header.\n2. Statements for closed accounts should stay downloadable for seven years.\n3. The March invoices show the old tariff name.\n\nCan you look at 3 first? It is going in front of their finance team on Friday and I would rather not explain it live. Happy to pair on it after lunch if the tariff table is as confusing as I remember."
+          }
+        },
+        "unknown-connector": {
+          "source": {
+            "connector": "pagerduty",
+            "kind": "channel",
+            "channel_id": "PXY123",
+            "channel_name": "PXY123",
+            "sender_id": "U999",
+            "sender_name": "U999",
+            "ts": 1789900000,
+            "text": "Incident #4821 acknowledged."
+          }
+        }
+      },
+      "inbox": {}
+    }
+  }
+}

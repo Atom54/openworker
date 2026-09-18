@@ -107,6 +107,10 @@ class Config:
     cloud_relay_ws_url: str = (
         "wss://l4z1paxb83.execute-api.us-east-1.amazonaws.com/ocw-connect"
     )
+    # Hosted machines service the union view proxies to (spec: "Union view on
+    # the signed-in desktop"). Empty override ⇒ the cloud machines surface is
+    # off entirely; dev/BYO deployments point elsewhere.
+    cloud_machines_base: str = "https://machines.openworker.com"
 
 
 _FIELDS = {
@@ -131,6 +135,7 @@ _FIELDS = {
     "cloud_client_id",
     "cloud_audience",
     "cloud_relay_ws_url",
+    "cloud_machines_base",
 }
 
 # These fields change what consequential actions can run without a prompt, so the normal

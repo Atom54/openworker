@@ -1063,3 +1063,24 @@ def test_model_switch_with_no_reviewer_attached_still_works(tmp_path):
     engine.messages.append({"role": "user", "content": "hi"})
     engine.switch_model("anthropic:claude-sonnet-5")  # must not raise
     assert engine.model == "anthropic:claude-sonnet-5"
+
+
+def test_reviewer_caps_its_own_output_tokens():
+    """The verdict is one JSON line; an explicit cap keeps the call, on Anthropic, under
+    the SDK's non-streaming ceiling (a whole session of `unsure`
+    verdicts on 2026-09-16 came from the provider's 32k default tripping it)."""
+    seen: dict = {}
+
+    class _Recording(_Provider):
+        def complete(self, *, model, messages, tools=None, **settings):
+            seen.update(settings)
+            return super().complete(model=model, messages=messages, tools=tools)
+
+    rv = Reviewer(provider=_Recording(['{"verdict": "allow", "reason": "fine"}']), model="m")
+    assert _review(rv).verdict == "allow"
+    assert seen["max_tokens"] == reviewer_mod.REVIEWER_MAX_TOKENS
+    # Room to reason before answering (400 truncated hard calls into `unsure`, live
+    # 2026-09-17), yet under the SDK's non-streaming ceiling that made the cap necessary.
+    from coworker.providers.anthropic_provider import NONSTREAMING_TOKEN_CEILING
+
+    assert 2000 <= reviewer_mod.REVIEWER_MAX_TOKENS < NONSTREAMING_TOKEN_CEILING

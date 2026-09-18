@@ -9,7 +9,10 @@ subagents: true
 version: "1"
 team: worker
 tools: [code_files, git, search, shell, todo]
-recommended_models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
+# What this worker COULD use (spec §11.6): the consent ceiling for the staffing
+# card and grant_connector. Workers start with nothing on; the human ticks.
+connectors: [github]
+models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
 default_permission_mode: interactive
 description: A software engineer coworker that works team-style — it takes assigned work items from a lead coworker, implements them against their acceptance criteria, and hands off through review.
 ---

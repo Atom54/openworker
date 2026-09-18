@@ -23,7 +23,8 @@ dependencies = [
     "pydantic>=2",
     "mcp>=1.28.1,<2",  # MCP client (stdio + streamable-http); floor >=1.28.1 avoids PYSEC-2026-3481/3482/3483 (fixed in 1.27.2/1.28.1); <2 since 2.0.0 removed streamablehttp_client
     "httpx>=0.27",  # sync outbound senders for messaging connectors (send_message tool)
-    "websockets>=13",  # managed Slack relay client transport (relay_client.py)
+    "websockets>=13",  # managed Slack relay client transport (relay_client.py) + remote-home joiner
+    "cryptography>=42",  # ed25519 machine identity for remote homes (already transitive via google-auth)
     "ddgs>=9",  # keyless default web-search provider (DuckDuckGo); Tavily/Brave use httpx
     "croniter>=2",  # cron next-fire math for the automation scheduler
     # PDF attachments for models without native PDF support (pdf_support.py):
@@ -53,6 +54,7 @@ bedrock = ["boto3>=1.34"]
 openworker = "coworker.cli:main"
 openworker-server = "coworker.server.run:main"
 openworker-connectors = "coworker.connectors.cli:main"
+openworker-acceptor = "coworker.remote.service:main"
 # The board as an open surface (OPE-100): `ocw board …` / `ocw journal …`,
 # including `ocw board mcp` — the stdio MCP server external harnesses attach to.
 ocw = "coworker.teams.cli:main"
