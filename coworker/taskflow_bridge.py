@@ -4,8 +4,9 @@ TaskFlow (the user's desktop kanban) listens on a fixed port; this server does
 not, so TaskFlow never pushes: every scheduler tick pulls its queue instead.
 
 A queued task becomes a *disabled* one-shot automation in the folder TaskFlow
-linked to its list — disabled so `due()` never fires it, but listed with its
-transcript like any other automation. TaskFlow's 409 on the claim is the lock
+linked to its list, or in a fresh scratch dir when the list has none —
+disabled so `due()` never fires it, but listed with its transcript like any
+other automation. TaskFlow's 409 on the claim is the lock
 against two ticks taking the same task.
 
 No in-memory state: completion is reconciled from TaskFlow's in-progress jobs
@@ -28,21 +29,24 @@ logger = logging.getLogger("coworker.taskflow")
 TASKFLOW_URL = "http://127.0.0.1:7391"
 
 Launch = Callable[[ScheduledTask], object]
+Scratch = Callable[[str], str]  # session id → provisioned scratch dir
 
 
-def _instructions(item: dict) -> str:
+def _instructions(item: dict, workspace: str) -> str:
     notes = (item.get("notes") or "").strip()
     return (
         f"Tâche TaskFlow #{item['task_id']} : {item['title']}\n\n"
         + (f"{notes}\n\n" if notes else "")
-        + f"Tu travailles dans {item['workspace']}. Les images des notes "
+        + f"Tu travailles dans {workspace}. Les images des notes "
         f"(asset://localhost/…) se lisent via {TASKFLOW_URL}/assets/….\n"
         "Termine par un rapport concis en français : ce qui a été fait, ce qui reste, "
         "comment vérifier."
     )
 
 
-async def tick(store: TaskStore, launch: Launch, client: httpx.AsyncClient) -> None:
+async def tick(
+    store: TaskStore, launch: Launch, client: httpx.AsyncClient, scratch: Scratch
+) -> None:
     try:
         queue = (await client.get("/agent/queue")).json()
         jobs = (await client.get("/agent/jobs")).json()
@@ -50,16 +54,18 @@ async def tick(store: TaskStore, launch: Launch, client: httpx.AsyncClient) -> N
         return  # TaskFlow closed: normal, try again next tick
 
     for item in queue:
-        task = store.save(
-            ScheduledTask(
-                title=item["title"],
-                instructions=_instructions(item),
-                schedule=Schedule(kind="once", fire_at=datetime.now().isoformat()),
-                workspace=item["workspace"],
-                origin_surface="taskflow",
-                enabled=False,
-            )
+        task = ScheduledTask(
+            title=item["title"],
+            instructions="",
+            schedule=Schedule(kind="once", fire_at=datetime.now().isoformat()),
+            workspace=item.get("workspace") or "",
+            origin_surface="taskflow",
+            enabled=False,
         )
+        if not task.workspace:
+            task.workspace = scratch(task.task_session_id)
+        task.instructions = _instructions(item, task.workspace)
+        store.save(task)
         claim = await client.post(
             f"/agent/jobs/{item['task_id']}",
             json={"status": "in_progress", "openworker_id": task.id},

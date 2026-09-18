@@ -4644,7 +4644,9 @@ class SessionManager:
             run.add_done_callback(runs.discard)
 
         async with httpx.AsyncClient(base_url=taskflow_bridge.TASKFLOW_URL, timeout=5) as client:
-            await taskflow_bridge.tick(self.task_store, launch, client)
+            await taskflow_bridge.tick(
+                self.task_store, launch, client, self._provision_scratch
+            )
 
     async def resume_due_wakes(self) -> int:
         """Resume sessions whose self-wakes are due (called each scheduler tick). A suspended
