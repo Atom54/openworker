@@ -1402,7 +1402,12 @@ export function App() {
   const selectSessionRef = useRef<typeof selectSession | null>(null);
   useEffect(() => {
     let stop: (() => void) | undefined;
-    listenNotificationClick((t) => {
+    listenNotificationClick(async (t) => {
+      // A deep link (openworker://session/<id>) carries only the id: look up the rest.
+      if (!t.workspace) {
+        const s = (await getSessions().catch(() => [])).find((x) => x.session_id === t.session_id);
+        if (s) t = { ...t, workspace: s.workspace, agent: s.agent };
+      }
       selectSessionRef.current?.(t.session_id, t.workspace, t.agent);
     }).then((off) => {
       stop = off;

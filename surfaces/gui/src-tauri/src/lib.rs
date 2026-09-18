@@ -676,6 +676,21 @@ fn notify(app: tauri::AppHandle, title: String, body: String, target: Notificati
     });
 }
 
+// --- Deep links -------------------------------------------------------------------
+// `openworker://session/<id>` opens that conversation — TaskFlow links its agent
+// badges here. It rides the notification-click path; the JS side fills in the
+// workspace/agent a link can't carry.
+
+fn deep_link_target(url: &str) -> Option<NotificationTarget> {
+    let id = url.strip_prefix("openworker://session/")?.trim_end_matches('/');
+    let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    valid.then(|| NotificationTarget {
+        session_id: id.to_string(),
+        workspace: String::new(),
+        agent: String::new(),
+    })
+}
+
 // --- Auto-update (tauri-plugin-updater) -------------------------------------------
 // The GUI drives updates through these commands (same invoke bridge as everything
 // else — no global plugin JS): check, background pre-download, install. Update
@@ -790,6 +805,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
@@ -820,6 +836,20 @@ pub fn run() {
             notify
         ])
         .setup(move |app| {
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                // ponytail: links that cold-launch the app arrive before the webview listens
+                // and are dropped; the bridge needs OpenWorker running anyway.
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if let Some(target) = deep_link_target(url.as_str()) {
+                            show_main(&handle);
+                            let _ = handle.emit("ow://notification-click", target);
+                        }
+                    }
+                });
+            }
             // 0. Own our notifications: without this they are attributed to whatever process
             // launched us (Terminal, in a shell-run dev build). Best-effort — it fails when the
             // bundle is not registered with LaunchServices, which is exactly the dev case, and
@@ -979,4 +1009,21 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod deep_link_tests {
+    use super::deep_link_target;
+
+    #[test]
+    fn parses_session_links_only() {
+        let t = deep_link_target("openworker://session/efd22c2e42924b069d50a82f0ff01c34").unwrap();
+        assert_eq!(t.session_id, "efd22c2e42924b069d50a82f0ff01c34");
+        assert!(t.workspace.is_empty() && t.agent.is_empty());
+        assert_eq!(deep_link_target("openworker://session/abc/").unwrap().session_id, "abc");
+        assert!(deep_link_target("openworker://session/").is_none());
+        assert!(deep_link_target("openworker://session/../etc").is_none());
+        assert!(deep_link_target("openworker://settings").is_none());
+        assert!(deep_link_target("https://evil.test/session/abc").is_none());
+    }
 }

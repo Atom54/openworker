@@ -45,6 +45,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["openworker"] }
+    },
     "updater": {
       "endpoints": [
         "https://download.openworker.com/latest.json",
