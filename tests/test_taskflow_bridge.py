@@ -1,4 +1,4 @@
-"""TaskFlow bridge — one tick against a fake TaskFlow API. No network, no LLM."""
+"""TaskFlow bridge — ticks against a fake TaskFlow API and a fake host. No network, no LLM."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ import json
 
 import httpx
 
-from coworker.automation import TaskRun, TaskStore
-from coworker.taskflow_bridge import tick
+from coworker.taskflow_bridge import INTERRUPTED, tick
 
 
 class FakeTaskFlow:
@@ -32,106 +31,138 @@ class FakeTaskFlow:
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            transport=httpx.MockTransport(self.handler),
-            base_url="http://taskflow.test",
+            transport=httpx.MockTransport(self.handler), base_url="http://taskflow.test"
         )
 
 
-def _idle(session_id: str) -> bool:
-    return False
+class FakeHost:
+    def __init__(self, running=False, waiting=False, reply=None):
+        self.running, self.parked, self.reply = running, waiting, reply
+        self.opened: list[tuple] = []
+        self.dropped: list[str] = []
+        self.launched: list[tuple[str, str]] = []
 
+    def open_session(self, title, workspace, task_id):
+        self.opened.append((title, workspace, task_id))
+        return f"sess-{task_id}"
 
-def _scratch(session_id: str) -> str:
-    return f"/scratch/{session_id}"
+    def drop_session(self, session_id):
+        self.dropped.append(session_id)
+
+    def launch(self, session_id, message):
+        self.launched.append((session_id, message))
+
+    def is_running(self, session_id):
+        return self.running
+
+    def waiting(self, session_id):
+        return self.parked
+
+    def last_reply(self, session_id):
+        return self.reply
 
 
 QUEUED = {"task_id": 7, "title": "Fix login", "notes": "See #12", "workspace": "/tmp/eloqa"}
 
 
-async def test_claims_a_queued_task_and_launches_it(tmp_path):
-    store, launched = TaskStore(tmp_path / "a.db"), []
-    fake = FakeTaskFlow(queue=[QUEUED])
+async def _tick(host, fake):
     async with fake.client() as client:
-        await tick(store, launched.append, client, _scratch, _idle)
-
-    [task] = store.list()
-    assert task.workspace == "/tmp/eloqa"
-    assert not task.enabled, "the scheduler must never fire it on its own"
-    assert "Fix login" in task.instructions and "See #12" in task.instructions
-    assert "7391" not in task.instructions, "no API pointer without images"
-    assert fake.posts == [(7, {"status": "in_progress", "openworker_id": task.id})]
-    assert [t.id for t in launched] == [task.id]
-
-
-async def test_list_without_folder_gets_a_scratch_dir(tmp_path):
-    store = TaskStore(tmp_path / "a.db")
-    fake = FakeTaskFlow(queue=[{**QUEUED, "workspace": None}])
-    async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch, _idle)
-    [task] = store.list()
-    assert task.workspace == f"/scratch/{task.task_session_id}"
-    assert f"Tu travailles dans /scratch/{task.task_session_id}" in task.instructions
-
-
-async def test_lost_claim_leaves_no_trace(tmp_path):
-    store, launched = TaskStore(tmp_path / "a.db"), []
-    fake = FakeTaskFlow(queue=[QUEUED], claim_status=409)
-    async with fake.client() as client:
-        await tick(store, launched.append, client, _scratch, _idle)
-    assert store.list() == [] and launched == []
-
-
-async def _reconcile(tmp_path, run_status, job_status="in_progress", waiting=_idle, **run_fields):
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    store = TaskStore(tmp_path / "a.db")
-    fake = FakeTaskFlow(queue=[QUEUED])
-    async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch, _idle)
-    [task] = store.list()
-    if run_status:
-        store.add_run(TaskRun(task_id=task.id, status=run_status, **run_fields))
-    fake.queue, fake.posts = [], []
-    fake.jobs = [{"task_id": 7, "status": job_status, "openworker_id": task.id}]
-    async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch, waiting)
+        await tick(host, client)
     return fake.posts
 
 
-async def test_finished_run_is_reported_for_review(tmp_path):
-    posts = await _reconcile(tmp_path, "ok", result_text="Done, see PR #3.")
+async def test_claims_a_queued_task_as_a_conversation():
+    host, fake = FakeHost(), FakeTaskFlow(queue=[QUEUED])
+    posts = await _tick(host, fake)
+
+    assert host.opened == [("Fix login", "/tmp/eloqa", 7)]
+    assert posts == [(7, {"status": "in_progress", "openworker_id": "sess-7"})]
+    [(session_id, message)] = host.launched
+    assert session_id == "sess-7"
+    assert message.startswith("Fix login\n\nSee #12")
+    assert "Scheduled" not in message
+    assert "7391" not in message, "no API pointer without images"
+
+
+async def test_images_in_notes_get_the_assets_url():
+    host = FakeHost()
+    item = {**QUEUED, "notes": "![](asset://localhost/2026/09/a.png)"}
+    await _tick(host, FakeTaskFlow(queue=[item]))
+    assert "127.0.0.1:7391/assets/" in host.launched[0][1]
+
+
+async def test_list_without_folder_passes_no_workspace():
+    host = FakeHost()
+    await _tick(host, FakeTaskFlow(queue=[{**QUEUED, "workspace": None}]))
+    assert host.opened == [("Fix login", None, 7)]
+
+
+async def test_lost_claim_drops_the_session():
+    host = FakeHost()
+    await _tick(host, FakeTaskFlow(queue=[QUEUED], claim_status=409))
+    assert host.dropped == ["sess-7"] and host.launched == []
+
+
+def _job(status="in_progress"):
+    return {"task_id": 7, "status": status, "openworker_id": "sess-7"}
+
+
+async def test_finished_run_is_reported_for_review():
+    posts = await _tick(FakeHost(reply="Done, see PR #3."), FakeTaskFlow(jobs=[_job()]))
     assert posts == [(7, {"status": "review", "report": "Done, see PR #3."})]
 
 
-async def test_failed_run_is_reported_too(tmp_path):
-    posts = await _reconcile(tmp_path, "error", error="model unavailable")
-    assert posts == [(7, {"status": "review", "report": "Erreur : model unavailable"})]
+async def test_run_stopped_without_reply_is_still_reported():
+    posts = await _tick(FakeHost(reply=None), FakeTaskFlow(jobs=[_job("blocked")]))
+    assert posts == [(7, {"status": "review", "report": INTERRUPTED})]
 
 
-async def test_run_waiting_on_an_approval_is_flagged_then_released(tmp_path):
-    parked = lambda session_id: session_id.startswith("__run__")
-    assert await _reconcile(tmp_path / "a", "running", waiting=parked) == [
-        (7, {"status": "blocked"})
-    ]
-    assert await _reconcile(tmp_path / "b", "running", job_status="blocked") == [
+async def test_run_waiting_on_an_approval_is_flagged_then_released():
+    parked = FakeHost(running=True, waiting=True)
+    assert await _tick(parked, FakeTaskFlow(jobs=[_job()])) == [(7, {"status": "blocked"})]
+    assert await _tick(parked, FakeTaskFlow(jobs=[_job("blocked")])) == []
+
+    busy = FakeHost(running=True)
+    assert await _tick(busy, FakeTaskFlow(jobs=[_job("blocked")])) == [
         (7, {"status": "in_progress"})
     ]
-    assert await _reconcile(tmp_path / "c", "running", job_status="blocked", waiting=parked) == []
+    assert await _tick(busy, FakeTaskFlow(jobs=[_job()])) == []
 
 
-async def test_blocked_run_that_finishes_goes_to_review(tmp_path):
-    posts = await _reconcile(tmp_path, "ok", job_status="blocked", result_text="ok")
-    assert posts == [(7, {"status": "review", "report": "ok"})]
+async def test_other_jobs_are_left_alone():
+    jobs = [_job("queued"), _job("review"), {"task_id": 8, "status": "in_progress"}]
+    assert await _tick(FakeHost(reply="x"), FakeTaskFlow(jobs=jobs)) == []
 
 
-async def test_running_or_missing_run_waits(tmp_path):
-    assert await _reconcile(tmp_path, "running") == []
-    assert await _reconcile(tmp_path / "b", None) == []
-
-
-async def test_taskflow_closed_is_silent(tmp_path):
+async def test_taskflow_closed_is_silent():
     def refuse(request):
         raise httpx.ConnectError("refused", request=request)
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(refuse), base_url="http://x")
-    async with client:
-        await tick(TaskStore(tmp_path / "a.db"), lambda t: None, client, _scratch, _idle)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(refuse), base_url="http://x") as c:
+        await tick(FakeHost(), c)
+
+
+def test_manager_host_opens_a_visible_unattended_conversation(tmp_path, monkeypatch):
+    from coworker.server.manager import SessionManager
+    from coworker.taskflow_bridge import ManagerHost
+
+    monkeypatch.setenv("COWORKER_SCRATCH_BASE", str(tmp_path / "scratch"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    m = SessionManager(data_dir=tmp_path / "data", workspace=str(tmp_path))
+    host = ManagerHost(m)
+
+    sid = host.open_session("Écrire le post", None, 42)
+    rec = m.session_store.load(sid)
+    assert rec.title == "Écrire le post"
+    assert rec.origin == "taskflow"
+    assert rec.workspace.startswith(str(tmp_path / "scratch")), "no folder → scratch"
+    assert m.unattended.is_unattended(sid)
+    assert not host.is_running(sid) and not host.waiting(sid)
+    assert host.last_reply(sid) is None
+
+    in_repo = host.open_session("Fix", str(repo), 43)
+    assert m.session_store.load(in_repo).workspace == str(repo.resolve())
+
+    host.drop_session(sid)
+    assert m.session_store.load(sid) is None

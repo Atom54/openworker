@@ -4635,22 +4635,8 @@ class SessionManager:
 
         from .. import taskflow_bridge
 
-        runs = self._taskflow_runs
-
-        def launch(task) -> None:
-            # Spawned, not awaited: a run lasts minutes and must not stall the tick.
-            run = asyncio.create_task(self.scheduler.run_task(task, trigger="taskflow"))
-            runs.add(run)
-            run.add_done_callback(runs.discard)
-
         async with httpx.AsyncClient(base_url=taskflow_bridge.TASKFLOW_URL, timeout=5) as client:
-            await taskflow_bridge.tick(
-                self.task_store,
-                launch,
-                client,
-                self._provision_scratch,
-                lambda session_id: bool(self.inbox.pending(session_id)),
-            )
+            await taskflow_bridge.tick(taskflow_bridge.ManagerHost(self), client)
 
     async def resume_due_wakes(self) -> int:
         """Resume sessions whose self-wakes are due (called each scheduler tick). A suspended
