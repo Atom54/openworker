@@ -37,6 +37,10 @@ class FakeTaskFlow:
         )
 
 
+def _idle(session_id: str) -> bool:
+    return False
+
+
 def _scratch(session_id: str) -> str:
     return f"/scratch/{session_id}"
 
@@ -48,7 +52,7 @@ async def test_claims_a_queued_task_and_launches_it(tmp_path):
     store, launched = TaskStore(tmp_path / "a.db"), []
     fake = FakeTaskFlow(queue=[QUEUED])
     async with fake.client() as client:
-        await tick(store, launched.append, client, _scratch)
+        await tick(store, launched.append, client, _scratch, _idle)
 
     [task] = store.list()
     assert task.workspace == "/tmp/eloqa"
@@ -63,7 +67,7 @@ async def test_list_without_folder_gets_a_scratch_dir(tmp_path):
     store = TaskStore(tmp_path / "a.db")
     fake = FakeTaskFlow(queue=[{**QUEUED, "workspace": None}])
     async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch)
+        await tick(store, lambda t: None, client, _scratch, _idle)
     [task] = store.list()
     assert task.workspace == f"/scratch/{task.task_session_id}"
     assert f"Tu travailles dans /scratch/{task.task_session_id}" in task.instructions
@@ -73,23 +77,23 @@ async def test_lost_claim_leaves_no_trace(tmp_path):
     store, launched = TaskStore(tmp_path / "a.db"), []
     fake = FakeTaskFlow(queue=[QUEUED], claim_status=409)
     async with fake.client() as client:
-        await tick(store, launched.append, client, _scratch)
+        await tick(store, launched.append, client, _scratch, _idle)
     assert store.list() == [] and launched == []
 
 
-async def _reconcile(tmp_path, run_status, **run_fields):
+async def _reconcile(tmp_path, run_status, job_status="in_progress", waiting=_idle, **run_fields):
     tmp_path.mkdir(parents=True, exist_ok=True)
     store = TaskStore(tmp_path / "a.db")
     fake = FakeTaskFlow(queue=[QUEUED])
     async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch)
+        await tick(store, lambda t: None, client, _scratch, _idle)
     [task] = store.list()
     if run_status:
         store.add_run(TaskRun(task_id=task.id, status=run_status, **run_fields))
     fake.queue, fake.posts = [], []
-    fake.jobs = [{"task_id": 7, "status": "in_progress", "openworker_id": task.id}]
+    fake.jobs = [{"task_id": 7, "status": job_status, "openworker_id": task.id}]
     async with fake.client() as client:
-        await tick(store, lambda t: None, client, _scratch)
+        await tick(store, lambda t: None, client, _scratch, waiting)
     return fake.posts
 
 
@@ -103,6 +107,22 @@ async def test_failed_run_is_reported_too(tmp_path):
     assert posts == [(7, {"status": "review", "report": "Erreur : model unavailable"})]
 
 
+async def test_run_waiting_on_an_approval_is_flagged_then_released(tmp_path):
+    parked = lambda session_id: session_id.startswith("__run__")
+    assert await _reconcile(tmp_path / "a", "running", waiting=parked) == [
+        (7, {"status": "blocked"})
+    ]
+    assert await _reconcile(tmp_path / "b", "running", job_status="blocked") == [
+        (7, {"status": "in_progress"})
+    ]
+    assert await _reconcile(tmp_path / "c", "running", job_status="blocked", waiting=parked) == []
+
+
+async def test_blocked_run_that_finishes_goes_to_review(tmp_path):
+    posts = await _reconcile(tmp_path, "ok", job_status="blocked", result_text="ok")
+    assert posts == [(7, {"status": "review", "report": "ok"})]
+
+
 async def test_running_or_missing_run_waits(tmp_path):
     assert await _reconcile(tmp_path, "running") == []
     assert await _reconcile(tmp_path / "b", None) == []
@@ -114,4 +134,4 @@ async def test_taskflow_closed_is_silent(tmp_path):
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(refuse), base_url="http://x")
     async with client:
-        await tick(TaskStore(tmp_path / "a.db"), lambda t: None, client, _scratch)
+        await tick(TaskStore(tmp_path / "a.db"), lambda t: None, client, _scratch, _idle)

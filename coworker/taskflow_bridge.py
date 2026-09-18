@@ -9,6 +9,8 @@ disabled so `due()` never fires it, but listed with its transcript like any
 other automation. TaskFlow's 409 on the claim is the lock
 against two ticks taking the same task.
 
+A run parked on an approval flips the job to `blocked` and back once answered.
+
 No in-memory state: completion is reconciled from TaskFlow's in-progress jobs
 and this store's last run, so a report survives either app being closed. The
 agent never marks a task done — TaskFlow's user does, after reading the report.
@@ -30,6 +32,7 @@ TASKFLOW_URL = "http://127.0.0.1:7391"
 
 Launch = Callable[[ScheduledTask], object]
 Scratch = Callable[[str], str]  # session id → provisioned scratch dir
+Waiting = Callable[[str], bool]  # session id → has a pending inbox item
 
 
 def _instructions(item: dict, workspace: str) -> str:
@@ -54,7 +57,11 @@ def _instructions(item: dict, workspace: str) -> str:
 
 
 async def tick(
-    store: TaskStore, launch: Launch, client: httpx.AsyncClient, scratch: Scratch
+    store: TaskStore,
+    launch: Launch,
+    client: httpx.AsyncClient,
+    scratch: Scratch,
+    waiting: Waiting,
 ) -> None:
     try:
         queue = (await client.get("/agent/queue")).json()
@@ -85,12 +92,23 @@ async def tick(
         launch(task)
 
     for job in jobs:
-        if job.get("status") != "in_progress" or not job.get("openworker_id"):
+        status = job.get("status")
+        if status not in ("in_progress", "blocked") or not job.get("openworker_id"):
             continue
         runs = store.runs(job["openworker_id"], limit=1)
-        if not runs or runs[0].status == "running":
+        if not runs:
             continue
         run = runs[0]
+        if run.status == "running":
+            # Unattended runs never self-approve: a parked ask shows in TaskFlow
+            # as "to approve" until the user answers it in OpenWorker's inbox.
+            parked = waiting(run.session_id)
+            if parked != (status == "blocked"):
+                await client.post(
+                    f"/agent/jobs/{job['task_id']}",
+                    json={"status": "blocked" if parked else "in_progress"},
+                )
+            continue
         report = (
             run.result_text or "(pas de rapport)"
             if run.status == "ok"

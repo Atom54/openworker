@@ -4645,7 +4645,11 @@ class SessionManager:
 
         async with httpx.AsyncClient(base_url=taskflow_bridge.TASKFLOW_URL, timeout=5) as client:
             await taskflow_bridge.tick(
-                self.task_store, launch, client, self._provision_scratch
+                self.task_store,
+                launch,
+                client,
+                self._provision_scratch,
+                lambda session_id: bool(self.inbox.pending(session_id)),
             )
 
     async def resume_due_wakes(self) -> int:
