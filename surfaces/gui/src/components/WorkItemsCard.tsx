@@ -13,6 +13,12 @@ import { Icon } from "./Icon";
 // separately pushes criteria back toward 1–3 crisp checks.
 const CRITERIA_CLAMP_CHARS = 160;
 
+// The card prints its own "Done when:" label — a lead that writes the label into the
+// criteria text (sometimes twice) must not produce "Done when: Done when: …".
+export function stripDoneWhen(criteria: string | undefined): string {
+  return (criteria || "").replace(/^(\s*done\s+when\s*:\s*)+/i, "");
+}
+
 export function WorkItemsCard({
   item,
   onRespond,
@@ -36,7 +42,8 @@ export function WorkItemsCard({
       {item.note && <div className="itemsreq-note">{item.note}</div>}
       <div className="itemsreq-list">
         {visible.map((entry, i) => {
-          const long = (entry.criteria || "").length > CRITERIA_CLAMP_CHARS;
+          const criteria = stripDoneWhen(entry.criteria);
+          const long = criteria.length > CRITERIA_CLAMP_CHARS;
           const open = !!openCriteria[i];
           return (
             <div className="itemsreq-item" key={i}>
@@ -44,7 +51,7 @@ export function WorkItemsCard({
               <span className="itemsreq-body">
                 <span className="itemsreq-item-title">{entry.title}</span>
                 <span className={"itemsreq-ac" + (long && !open ? " clamped" : "")}>
-                  <b>{t("team.items_done_when")}</b> {entry.criteria}
+                  <b>{t("team.items_done_when")}</b> {criteria}
                 </span>
                 {long && (
                   <button
