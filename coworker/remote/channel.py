@@ -48,12 +48,17 @@ RPC_TIMEOUT_SECONDS = 60.0
 
 
 def app_version() -> str:
-    try:
-        from importlib.metadata import version
+    from importlib.metadata import PackageNotFoundError, version
 
-        return version("coworker")
-    except Exception:
-        return "0.0.0"
+    # "coworker" = the distribution's name before it was published as "openworker".
+    for dist in ("openworker", "coworker"):
+        try:
+            return version(dist)
+        except PackageNotFoundError:
+            continue
+        except Exception:
+            break
+    return "0.0.0"
 
 
 def encode_body(body: bytes | None) -> str:

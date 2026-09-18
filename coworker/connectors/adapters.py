@@ -107,7 +107,7 @@ class TelegramAdapter(BasePlatformAdapter):
             from telegram.ext import Application, MessageHandler, filters
         except ImportError:
             logger.warning(
-                "python-telegram-bot not installed — `pip install coworker[messaging]`"
+                "python-telegram-bot not installed — `pip install 'openworker[messaging]'`"
             )
             return False
 
@@ -195,7 +195,7 @@ class SlackAdapter(BasePlatformAdapter):
             from slack_sdk.web.async_client import AsyncWebClient
         except ImportError:
             logger.warning(
-                "slack-bolt not installed — `pip install coworker[messaging]`"
+                "slack-bolt not installed — `pip install 'openworker[messaging]'`"
             )
             return False
 

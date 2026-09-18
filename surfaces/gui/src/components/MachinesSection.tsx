@@ -453,7 +453,7 @@ export function MachinesSection() {
 // The signed-in identity + org switcher moved to Settings ▸ Account
 // (UX-046 tail, 2026-08-30) — this page is the fleet list only.
 
-// Typed-code approval for `openworker auth join` (GitHub device-flow style).
+// Typed-code approval for `openworker machine auth join` (GitHub device-flow style).
 // The machine printed a code; the user types it here, checks the fingerprint
 // against what the machine printed, and decides. Approval mints the one join
 // token, bound to that machine's identity — a mistyped code shows a stranger's
@@ -561,7 +561,7 @@ function ApproveMachineCard({
               components={{
                 cmd: (
                   <span className="font-mono text-ink">
-                    {`openworker auth join <${t("machines.approve.this_url")}>`}
+                    {`openworker machine auth join <${t("machines.approve.this_url")}>`}
                   </span>
                 ),
               }}
@@ -690,7 +690,7 @@ function AddMachineCard({
       return "9787";
     }
   })();
-  const command = joinUrl ? `openworker join ${joinUrl} --name=my-box` : "…";
+  const command = joinUrl ? `openworker machine join ${joinUrl} --name=my-box` : "…";
 
   const copy = async () => {
     if (!joinUrl) return;
@@ -835,7 +835,7 @@ function AddMachineCard({
 // Per-machine key deploy for wallet-less backends (OPE-149). The value is
 // sealed IN THIS TAB to the machine's attested sealing key; the backend
 // relays ciphertext and records only names. The fingerprint shown here is
-// the user's verification anchor: `openworker status` on the box prints the
+// the user's verification anchor: `openworker machine status` on the box prints the
 // same sixteen characters.
 const KEY_PROVIDERS = [
   { id: "anthropic", label: "Anthropic" },

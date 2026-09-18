@@ -1,4 +1,11 @@
-"""CLI entry point. `coworker` launches the TUI; `coworker code` boots the code skill."""
+"""CLI entry point.
+
+Public surface: `openworker machine <command>` (run headless, joined to a controller),
+`openworker version`, and help. Everything else is unlisted until it has been tested as a
+product surface: the terminal UI (`openworker tui`, or a skill name as before) and the
+older top-level spellings of the machine commands (`openworker join …`), which enrolled
+boxes and their service units still use.
+"""
 
 from __future__ import annotations
 
@@ -15,23 +22,57 @@ from .permissions import Mode
 from .secrets import state_dir
 
 
-REMOTE_COMMANDS = ("join", "auth", "up", "status", "leave", "secrets", "service")
+REMOTE_COMMANDS = ("join", "auth", "up", "status", "leave", "secrets", "keys", "service")
+
+HELP = """\
+usage: openworker <command>
+
+OpenWorker — an open-source AI coworker you govern.
+
+commands:
+  machine     run this computer as a headless OpenWorker machine
+                join <link>     enroll with the join link from the app, then serve
+                auth join <url> enroll by approving a code in the app, then serve
+                up              serve again with the stored identity
+                status          show enrollment and the sealing-key fingerprint
+                keys            manage provider keys stored on this machine
+                service         run `up` as a background service
+                leave           forget this machine's enrollment and identity
+  version     print the version
+
+Run `openworker machine <command> --help` for details.
+Desktop app and docs: https://openworker.com
+"""
 
 
 def main(argv: Optional[list[str]] = None) -> None:
     import sys
 
-    # Remote-home verbs run headless (no TUI) and must win over the positional
-    # `skill` argument — `openworker join <url>` is a command, not a skill.
-    args = sys.argv[1:] if argv is None else argv
-    if args and args[0] in REMOTE_COMMANDS:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(HELP, end="")
+        return
+    if args[0] in ("version", "--version", "-V"):
+        from .remote.channel import app_version
+
+        print(f"openworker {app_version()}")
+        return
+    if args[0] == "machine":
+        from .remote.joiner import cli as remote_cli
+
+        raise SystemExit(remote_cli(args[1:] or ["--help"]))
+    # The older top-level spellings (`openworker join <url>`, `openworker up`): unlisted, kept
+    # working — they must win over the terminal UI's positional `skill` argument.
+    if args[0] in REMOTE_COMMANDS:
         from .remote.joiner import cli as remote_cli
 
         raise SystemExit(remote_cli(args))
+    if args[0] == "tui":
+        args = args[1:]
 
     cfg = load_config()
     parser = argparse.ArgumentParser(
-        prog="openworker", description="Agent coworker (TUI)."
+        prog="openworker tui", description="Terminal UI (unlisted)."
     )
     parser.add_argument(
         "skill", nargs="?", default="code", help="skill to launch (default: code)"
@@ -47,7 +88,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         help="permission mode",
     )
     parser.add_argument("--resume", default=None, help="resume a session id")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args)
 
     workspace = Path(args.cwd).expanduser().resolve()
     # Unified global store shared with the GUI/server (one place for all conversations).

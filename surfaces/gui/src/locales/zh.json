@@ -1952,7 +1952,7 @@
       "title": "{{name}} 上的密钥",
       "no_seal_key": "此机器尚未固定密封密钥 —— 请用当前版本的 OpenWorker 重新连接一次，然后重新打开此卡片。",
       "sealed_note": "密钥在此浏览器标签页中用该机器的密钥密封，并以密文形式经过服务器 —— 绝不会存储在这里。",
-      "fingerprint_line": "机器密封密钥 <fp/> —— 在机器上运行 <cmd>openworker status</cmd> 进行核对。",
+      "fingerprint_line": "机器密封密钥 <fp/> —— 在机器上运行 <cmd>openworker machine status</cmd> 进行核对。",
       "deployed_on": "部署于 {{date}}",
       "custom_profile": "自定义配置…",
       "profile_placeholder": "配置名称",
@@ -1965,7 +1965,7 @@
     "models": {
       "title": "模型与密钥",
       "sub": "位于 ⌂ {{name}}",
-      "sub_sealed": "位于 ⌂ {{name}} · 密封密钥 {{fingerprint}} —— 在机器上运行 `openworker status` 进行核对。",
+      "sub_sealed": "位于 ⌂ {{name}} · 密封密钥 {{fingerprint}} —— 在机器上运行 `openworker machine status` 进行核对。",
       "active_heading": "此机器上已启用",
       "loading": "正在从机器加载…",
       "offline": "机器离线 —— 目前无法读取其模型。",

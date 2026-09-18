@@ -546,12 +546,16 @@ def _lifespan(app):
 # -- CLI ----------------------------------------------------------------------
 
 
-def cli(argv: Optional[list[str]] = None) -> int:
+def cli(argv: Optional[list[str]] = None, prog: str = "openworker machine") -> int:
     from ..secrets import state_dir
 
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # `keys` is the public name; `secrets` is the older spelling and keeps working.
+    if argv and argv[0] == "secrets":
+        argv[0] = "keys"
     parser = argparse.ArgumentParser(
-        prog="openworker",
-        description="Remote-home commands: run this OpenWorker headless, joined to a controller.",
+        prog=prog,
+        description="Run this OpenWorker headless, joined to a controller (the desktop app or OpenWorker Cloud).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -573,7 +577,7 @@ def cli(argv: Optional[list[str]] = None) -> int:
     sub.add_parser("status", help="show this machine's remote-home state")
     # Box-side provisioning (remote-home-design.md §Keys wallet, door 2): write
     # secrets straight into THIS machine's store — the wallet never in the path.
-    p_secrets = sub.add_parser("secrets", help="manage this machine's local secrets")
+    p_secrets = sub.add_parser("keys", help="manage provider keys stored on this machine")
     secrets_sub = p_secrets.add_subparsers(dest="secrets_command", required=True)
     p_set = secrets_sub.add_parser("set", help="write one profile: NAME key=value …")
     p_set.add_argument("profile")
@@ -585,7 +589,7 @@ def cli(argv: Optional[list[str]] = None) -> int:
     p_service = sub.add_parser("service", help="run this joined machine under systemd")
     service_sub = p_service.add_subparsers(dest="service_command", required=True)
     p_install = service_sub.add_parser(
-        "install", help="write + enable a user unit running `openworker up`"
+        "install", help="write + enable a user unit that keeps this machine serving"
     )
     p_install.add_argument(
         "--force", action="store_true", help="replace another unit already pinned to this state dir"
@@ -608,7 +612,7 @@ def cli(argv: Optional[list[str]] = None) -> int:
         return _cmd_status(state)
     if args.command == "leave":
         return _cmd_leave(state, args.yes)
-    if args.command == "secrets":
+    if args.command == "keys":
         return _cmd_secrets(state, args)
     if args.command == "service":
         return _cmd_service(state, args)
@@ -699,7 +703,7 @@ def _cmd_up(state: Path) -> int:
     cfg = load_remote_config(state)
     if cfg is None:
         print(
-            "error: this machine has not joined a controller (run `openworker join <url>`)",
+            "error: this machine has not joined a controller (run `openworker machine join <link>`)",
             file=sys.stderr,
         )
         return 2
@@ -827,7 +831,7 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if platform != "linux":
         print(
             "error: `service install` targets Linux/systemd (the VM/server the box "
-            "runs on). On macOS just run `openworker up` in a terminal or via launchd.",
+            "runs on). On macOS just run `openworker machine up` in a terminal or via launchd.",
             file=sys.stderr,
         )
         return 2
@@ -854,7 +858,7 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if cfg is None:
         print(
             "error: this machine has not joined a controller yet — run "
-            "`openworker join <url>` first, then install the service.",
+            "`openworker machine join <link>` first, then install the service.",
             file=sys.stderr,
         )
         return 2
@@ -868,8 +872,8 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if same and not getattr(args, "force", False):
         for r in same:
             print(
-                f"error: {r['unit']} already runs `openworker up` on this state dir "
-                f"({state}). Remove it first (`openworker service uninstall --unit "
+                f"error: {r['unit']} already runs on this state dir "
+                f"({state}). Remove it first (`openworker machine service uninstall --unit "
                 f"{r['unit']}`) or pass --force to replace it.",
                 file=sys.stderr,
             )

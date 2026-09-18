@@ -76,7 +76,7 @@ describe("MachinesSection", () => {
     fireEvent.click(screen.getByText("Add a machine…"));
     await waitFor(() =>
       expect(screen.getByTestId("join-command").textContent).toContain(
-        "openworker join http://127.0.0.1:9787/j/tok123",
+        "openworker machine join http://127.0.0.1:9787/j/tok123",
       ),
     );
     expect(armCalls).toBe(1);

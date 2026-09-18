@@ -2957,7 +2957,7 @@ export interface Machine {
   last_seen: number | null;
   connected: boolean;
   // Public halves only (older backends omit them): what a browser seals key
-  // deploys to, and the fingerprint the user checks with `openworker status`.
+  // deploys to, and the fingerprint the user checks with `openworker machine status`.
   seal_pubkey?: string;
   seal_fingerprint?: string;
   // Union view: where this row lives. Absent = the local registry; "cloud"
@@ -3208,7 +3208,7 @@ export async function getMe(): Promise<MeInfo> {
   return r.json();
 }
 
-// -- device-flow approval (`openworker auth join` — typed-code, GitHub-style) --
+// -- device-flow approval (`openworker machine auth join` — typed-code, GitHub-style) --
 
 export interface DeviceRequestDetail {
   user_code: string;

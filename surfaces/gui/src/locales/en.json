@@ -1991,7 +1991,7 @@
       "title": "Keys on {{name}}",
       "no_seal_key": "This machine has no sealing key pinned yet — reconnect it once on current OpenWorker code, then reopen this card.",
       "sealed_note": "The key is sealed in this browser tab to this machine's key and passes through the server as ciphertext — it is never stored here.",
-      "fingerprint_line": "Machine sealing key <fp/> — verify with <cmd>openworker status</cmd> on the box.",
+      "fingerprint_line": "Machine sealing key <fp/> — verify with <cmd>openworker machine status</cmd> on the box.",
       "deployed_on": "deployed {{date}}",
       "custom_profile": "Custom profile…",
       "profile_placeholder": "profile name",
@@ -2004,7 +2004,7 @@
     "models": {
       "title": "Models & Keys",
       "sub": "On ⌂ {{name}}",
-      "sub_sealed": "On ⌂ {{name}} · sealing key {{fingerprint}} — verify with `openworker status` on the machine.",
+      "sub_sealed": "On ⌂ {{name}} · sealing key {{fingerprint}} — verify with `openworker machine status` on the machine.",
       "active_heading": "Active on this machine",
       "loading": "Loading from the machine…",
       "offline": "Machine is offline — its models can't be read right now.",
