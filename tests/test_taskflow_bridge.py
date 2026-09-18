@@ -54,6 +54,7 @@ async def test_claims_a_queued_task_and_launches_it(tmp_path):
     assert task.workspace == "/tmp/eloqa"
     assert not task.enabled, "the scheduler must never fire it on its own"
     assert "Fix login" in task.instructions and "See #12" in task.instructions
+    assert "7391" not in task.instructions, "no API pointer without images"
     assert fake.posts == [(7, {"status": "in_progress", "openworker_id": task.id})]
     assert [t.id for t in launched] == [task.id]
 

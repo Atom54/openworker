@@ -34,13 +34,22 @@ Scratch = Callable[[str], str]  # session id → provisioned scratch dir
 
 def _instructions(item: dict, workspace: str) -> str:
     notes = (item.get("notes") or "").strip()
+    # Everything the agent needs is inline. Pointing it at TaskFlow's API made it
+    # re-read the task and write the notes itself — a shell call that parks an
+    # unattended run on an approval, and a second writer on the notes.
+    images = (
+        f"Les images des notes (asset://localhost/…) se lisent via {TASKFLOW_URL}/assets/….\n"
+        if "asset://" in notes
+        else ""
+    )
     return (
-        f"Tâche TaskFlow #{item['task_id']} : {item['title']}\n\n"
+        f"Tâche : {item['title']}\n\n"
         + (f"{notes}\n\n" if notes else "")
-        + f"Tu travailles dans {workspace}. Les images des notes "
-        f"(asset://localhost/…) se lisent via {TASKFLOW_URL}/assets/….\n"
-        "Termine par un rapport concis en français : ce qui a été fait, ce qui reste, "
-        "comment vérifier."
+        + f"Tu travailles dans {workspace}.\n"
+        + images
+        + "Tout le contexte est ci-dessus : ne consulte ni ne modifie TaskFlow. Ton dernier "
+        "message est ajouté automatiquement aux notes de la tâche comme rapport : mets-y le "
+        "résultat lui-même, puis en français ce qui a été fait, ce qui reste et comment vérifier."
     )
 
 
