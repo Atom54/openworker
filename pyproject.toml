@@ -3,9 +3,11 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "coworker"
-version = "0.0.0"
-description = "Agent coworker platform — provider-agnostic agentic coworker runtime"
+name = "openworker"
+version = "0.2.3"
+description = "OpenWorker — an open-source AI coworker you govern. The headless runtime and CLI."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0",
@@ -15,9 +17,8 @@ dependencies = [
     "textual>=1.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    # aisuite (toolkits/tracing), pinned to the commit this repo was imported from;
-    # swap for a PyPI pin ("aisuite>=x.y") once the next aisuite release ships.
-    "aisuite @ git+https://github.com/andrewyng/aisuite.git@1b4bbf303ec21968230b1ec869a144d054e9b3c4",
+    # aisuite (tool metadata, toolkits, tracing). 0.2.0 is the first PyPI release with those modules.
+    "aisuite>=0.2.0",
     "docstring_parser",
     "pyyaml>=6",  # persona manifest frontmatter (YAML)
     "pydantic>=2",
@@ -38,6 +39,10 @@ dependencies = [
     # tomllib landed in the 3.11 stdlib; on the 3.10 floor config.py falls back to tomli.
     "tomli>=2; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://openworker.com"
+Source = "https://github.com/andrewyng/openworker"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio", "pytest-cov>=5", "httpx", "httpx2"]

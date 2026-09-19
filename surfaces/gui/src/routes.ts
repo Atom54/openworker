@@ -4,7 +4,7 @@
 // before the first rewrite.
 //
 //   #/approve/XXXX-XXXX      → open Settings ▸ Machines with the code prefilled
-//                              (what `openworker auth join` prints on hosted)
+//                              (what `openworker join` prints on hosted)
 //   #/s/{sessionId}          → land on that session (bookmark/refresh)
 //   #/settings/{page}?m={id} → open that Settings page; ?m= is the machine
 //                              scope for machine-scoped pages (UX-046)

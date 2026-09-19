@@ -1,4 +1,4 @@
-"""The box side of remote homes: `openworker join / up / status / leave`.
+"""The box side of remote homes: `openworker join`, `openworker up`, `openworker machine …`.
 
 Joined mode runs the ENTIRE existing server — state dir, engines, the full
 ASGI app — with no listener at all. `joiner` dials the controller, proves its
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import socket
 import sys
 import time
@@ -546,17 +547,49 @@ def _lifespan(app):
 # -- CLI ----------------------------------------------------------------------
 
 
-def cli(argv: Optional[list[str]] = None) -> int:
+TOP_COMMANDS = ("join", "up")
+MACHINE_COMMANDS = ("status", "keys", "logs", "service", "leave")
+
+
+class _Only:
+    """Registers a subcommand only when the caller's view includes it; the rest get a
+    throwaway parser, so one definition serves `openworker`, `openworker machine` and tests."""
+
+    def __init__(self, sub, only):
+        self._sub, self._only = sub, only
+
+    def add_parser(self, name, **kw):
+        if self._only is None or name in self._only:
+            return self._sub.add_parser(name, **kw)
+        return argparse.ArgumentParser(add_help=False)
+
+
+def cli(
+    argv: Optional[list[str]] = None,
+    prog: str = "openworker",
+    only: Optional[tuple[str, ...]] = None,
+) -> int:
+    """`only` limits the subcommands offered: TOP_COMMANDS for `openworker join|up`,
+    MACHINE_COMMANDS for `openworker machine …`; None offers all of them."""
     from ..secrets import state_dir
 
+    argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
-        prog="openworker",
-        description="Remote-home commands: run this OpenWorker headless, joined to a controller.",
+        prog=prog,
+        description=(
+            "Manage this machine."
+            if only == MACHINE_COMMANDS
+            else "Run this OpenWorker headless, joined to a controller (the desktop app or OpenWorker Cloud)."
+        ),
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = _Only(parser.add_subparsers(dest="command", required=True), only)
 
     p_join = sub.add_parser("join", help="enroll with a controller and start serving")
-    p_join.add_argument("url", help="join URL from the controller (…/j/<token>)")
+    p_join.add_argument(
+        "url",
+        help="the join link from the app (…/j/<token>), or the controller's address to "
+        "enroll by approving a code there",
+    )
     p_join.add_argument("--name", default=None, help="machine name (default: hostname)")
 
     # `auth join`: no token in hand — ask the controller for approval (device
@@ -570,10 +603,15 @@ def cli(argv: Optional[list[str]] = None) -> int:
     p_auth_join.add_argument("--name", default=None, help="machine name (default: hostname)")
 
     sub.add_parser("up", help="start serving with the stored identity")
-    sub.add_parser("status", help="show this machine's remote-home state")
+    p_status = sub.add_parser("status", help="show this machine's enrollment and key fingerprints")
+    p_status.add_argument("--json", action="store_true", help="print as JSON (for scripts)")
+    p_logs = sub.add_parser("logs", help="show the service's log (when this machine runs as a service)")
+    p_logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
+    p_logs.add_argument("-n", "--lines", type=int, default=200, help="lines to show first (default 200)")
+    p_logs.add_argument("--unit", default=None, help="service name (default: this machine's)")
     # Box-side provisioning (remote-home-design.md §Keys wallet, door 2): write
     # secrets straight into THIS machine's store — the wallet never in the path.
-    p_secrets = sub.add_parser("secrets", help="manage this machine's local secrets")
+    p_secrets = sub.add_parser("keys", help="manage provider keys stored on this machine")
     secrets_sub = p_secrets.add_subparsers(dest="secrets_command", required=True)
     p_set = secrets_sub.add_parser("set", help="write one profile: NAME key=value …")
     p_set.add_argument("profile")
@@ -582,10 +620,12 @@ def cli(argv: Optional[list[str]] = None) -> int:
     p_leave = sub.add_parser("leave", help="forget enrollment AND identity on this box")
     p_leave.add_argument("--yes", action="store_true", help="skip confirmation")
     # The systemd story: `up` under a unit, restarted forever (P1d).
-    p_service = sub.add_parser("service", help="run this joined machine under systemd")
+    p_service = sub.add_parser(
+        "service", help="run this joined machine as a background service (systemd or launchd)"
+    )
     service_sub = p_service.add_subparsers(dest="service_command", required=True)
     p_install = service_sub.add_parser(
-        "install", help="write + enable a user unit running `openworker up`"
+        "install", help="write + enable a user unit that keeps this machine serving"
     )
     p_install.add_argument(
         "--force", action="store_true", help="replace another unit already pinned to this state dir"
@@ -605,17 +645,27 @@ def cli(argv: Optional[list[str]] = None) -> int:
     if args.command == "up":
         return _cmd_up(state)
     if args.command == "status":
-        return _cmd_status(state)
+        return _cmd_status(state, as_json=getattr(args, "json", False))
+    if args.command == "logs":
+        return _cmd_logs(state, args)
     if args.command == "leave":
         return _cmd_leave(state, args.yes)
-    if args.command == "secrets":
+    if args.command == "keys":
         return _cmd_secrets(state, args)
     if args.command == "service":
         return _cmd_service(state, args)
     return 2
 
 
+def _is_controller_address(url: str) -> bool:
+    """A bare address (no path): enroll by approving a code there, not with a link."""
+    parts = urlsplit(url if "://" in url else f"//{url}")
+    return bool(parts.netloc) and parts.path in ("", "/") and not parts.query
+
+
 def _cmd_join(state: Path, url: str, name: Optional[str]) -> int:
+    if _is_controller_address(url):
+        return _cmd_auth_join(state, url, name)
     try:
         controller, token = parse_join_url(url)
     except ValueError as exc:
@@ -699,7 +749,7 @@ def _cmd_up(state: Path) -> int:
     cfg = load_remote_config(state)
     if cfg is None:
         print(
-            "error: this machine has not joined a controller (run `openworker join <url>`)",
+            "error: this machine has not joined a controller (run `openworker join <link>`)",
             file=sys.stderr,
         )
         return 2
@@ -824,10 +874,12 @@ def _systemctl_user(*args: str) -> bool:
 def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Optional[Path] = None) -> int:
     platform = platform or sys.platform
     home = home or Path.home()
+    if platform == "darwin":
+        return _cmd_service_macos(state, args, home)
     if platform != "linux":
         print(
-            "error: `service install` targets Linux/systemd (the VM/server the box "
-            "runs on). On macOS just run `openworker up` in a terminal or via launchd.",
+            "error: `service` supports Linux (systemd) and macOS (launchd). Here, run "
+            "`openworker up` in a terminal that stays open.",
             file=sys.stderr,
         )
         return 2
@@ -854,7 +906,7 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if cfg is None:
         print(
             "error: this machine has not joined a controller yet — run "
-            "`openworker join <url>` first, then install the service.",
+            "`openworker join <link>` first, then install the service.",
             file=sys.stderr,
         )
         return 2
@@ -868,8 +920,8 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if same and not getattr(args, "force", False):
         for r in same:
             print(
-                f"error: {r['unit']} already runs `openworker up` on this state dir "
-                f"({state}). Remove it first (`openworker service uninstall --unit "
+                f"error: {r['unit']} already runs on this state dir "
+                f"({state}). Remove it first (`openworker machine service uninstall --unit "
                 f"{r['unit']}`) or pass --force to replace it.",
                 file=sys.stderr,
             )
@@ -904,7 +956,221 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
         )
     return 0
 
-def _cmd_status(state: Path) -> int:
+# -- macOS: a launchd agent, the counterpart of the systemd user unit ----------------
+
+_AGENT_PREFIX = "com.openworker.machine"
+
+
+def agent_label_for(machine_name: str) -> str:
+    """`com.openworker.machine.<machine>` — one agent per joined identity."""
+    slug = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (machine_name or "")).strip("-")
+    return f"{_AGENT_PREFIX}.{slug}" if slug else _AGENT_PREFIX
+
+
+def service_log_path(state: Path) -> Path:
+    return state / "logs" / "machine.log"
+
+
+def _launchd_plist(state: Path, exe: str, label: str) -> bytes:
+    """A per-user agent running `up`: started at login, restarted when it exits, state dir
+    pinned. launchd starts agents with a bare PATH, and a coworker runs git, node and the
+    like — so the PATH of the shell that installed the service is carried over."""
+    import plistlib
+    import shlex
+
+    log = str(service_log_path(state))
+    return plistlib.dumps(
+        {
+            "Label": label,
+            "ProgramArguments": [*shlex.split(exe), "up"],
+            "EnvironmentVariables": {
+                "COWORKER_STATE_DIR": str(state),
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin"),
+            },
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "ThrottleInterval": 5,
+            "ProcessType": "Background",
+            "StandardOutPath": log,
+            "StandardErrorPath": log,
+        }
+    )
+
+
+def installed_agents(agent_dir: Path) -> list[dict]:
+    """Every OpenWorker launchd agent of this user with the state dir it pins."""
+    import plistlib
+
+    rows = []
+    for path in sorted(agent_dir.glob(f"{_AGENT_PREFIX}*.plist")):
+        try:
+            data = plistlib.loads(path.read_bytes())
+        except Exception:
+            continue
+        rows.append(
+            {
+                "unit": str(data.get("Label") or path.stem),
+                "state_dir": str((data.get("EnvironmentVariables") or {}).get("COWORKER_STATE_DIR") or ""),
+                "path": str(path),
+            }
+        )
+    return rows
+
+
+def _launchctl(*args: str) -> bool:
+    import subprocess
+
+    try:
+        return subprocess.run(["launchctl", *args], capture_output=True, timeout=15).returncode == 0
+    except (OSError, Exception):
+        return False
+
+
+def _cmd_service_macos(state: Path, args, home: Path) -> int:
+    agent_dir = home / "Library" / "LaunchAgents"
+    cfg = load_remote_config(state)
+    derived = agent_label_for(str(cfg.get("name") or "")) if cfg else _AGENT_PREFIX
+    domain = f"gui/{os.getuid()}"
+    if args.service_command == "uninstall":
+        wanted = getattr(args, "unit", None) or derived
+        plist = agent_dir / f"{wanted}.plist"
+        _launchctl("bootout", f"{domain}/{wanted}")
+        plist.unlink(missing_ok=True)
+        print(f"removed {plist}")
+        return 0
+    if args.service_command == "list":
+        rows = installed_agents(agent_dir)
+        if not rows:
+            print("no openworker services installed")
+        for row in rows:
+            print(f"{row['unit']}  state={row['state_dir'] or '?'}")
+        return 0
+    if cfg is None:
+        print(
+            "error: this machine has not joined a controller yet — run "
+            "`openworker join <link>` first, then install the service.",
+            file=sys.stderr,
+        )
+        return 2
+    import shutil
+
+    # Same rule as on Linux: a second service on the SAME state dir is refused (two engines,
+    # one database); services on other state dirs are reported.
+    others = [r for r in installed_agents(agent_dir) if r["unit"] != derived]
+    same = [r for r in others if r["state_dir"] and Path(r["state_dir"]) == Path(state)]
+    if same and not getattr(args, "force", False):
+        for r in same:
+            print(
+                f"error: {r['unit']} already runs on this state dir ({state}). Remove it first "
+                f"(`openworker machine service uninstall --unit {r['unit']}`) or pass --force "
+                "to replace it.",
+                file=sys.stderr,
+            )
+        return 2
+    for r in same:
+        _launchctl("bootout", f"{domain}/{r['unit']}")
+        Path(r["path"]).unlink(missing_ok=True)
+        print(f"replaced {r['unit']}")
+    for r in others:
+        if r not in same:
+            print(
+                f"note: {r['unit']} is also installed (state {r['state_dir'] or '?'}) — "
+                "a second engine on this Mac; remove it if it is stale."
+            )
+
+    exe = shutil.which("openworker") or f"{sys.executable} -m coworker.cli"
+    plist = agent_dir / f"{derived}.plist"
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    service_log_path(state).parent.mkdir(parents=True, exist_ok=True)
+    plist.write_bytes(_launchd_plist(state, exe, derived))
+    print(f"wrote {plist}")
+    _launchctl("bootout", f"{domain}/{derived}")  # a reinstall replaces the loaded copy
+    if _launchctl("bootstrap", domain, str(plist)):
+        print("service loaded: it starts at login and restarts if it stops.")
+        print("Logs: openworker machine logs -f")
+        print("It runs while you are logged in. For a Mac that must serve with nobody logged in,")
+        print("turn on automatic login, or keep the session open.")
+    else:
+        print(
+            "launchd was not reachable from here — load it manually:\n"
+            f"  launchctl bootstrap {domain} {plist}"
+        )
+    return 0
+
+
+# -- logs ----------------------------------------------------------------------------
+
+
+def logs_command(
+    state: Path, platform: str, unit: Optional[str], lines: int, follow: bool
+) -> Optional[list[str]]:
+    """The command that prints this machine's service log, or None where there is none."""
+    n = str(max(1, int(lines)))
+    if platform == "linux":
+        cfg = load_remote_config(state)
+        name = unit or (unit_name_for(str(cfg.get("name") or "")) if cfg else SERVICE_UNIT_NAME)
+        return ["journalctl", "--user", "-u", name, "-n", n, *(["-f"] if follow else [])]
+    if platform == "darwin":
+        return ["tail", "-n", n, *(["-f"] if follow else []), str(service_log_path(state))]
+    return None
+
+
+def _cmd_logs(state: Path, args, platform: Optional[str] = None) -> int:
+    import subprocess
+
+    platform = platform or sys.platform
+    cmd = logs_command(state, platform, getattr(args, "unit", None), args.lines, args.follow)
+    if cmd is None:
+        print("error: `logs` supports Linux (systemd) and macOS (launchd).", file=sys.stderr)
+        return 2
+    if platform == "darwin" and not service_log_path(state).exists():
+        print(
+            "no service log yet. Logs are kept when this machine runs as a service "
+            "(`openworker machine service install`); in a terminal, `openworker up` prints them there.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        return subprocess.call(cmd)
+    except KeyboardInterrupt:
+        return 0
+    except OSError as exc:
+        print(f"error: could not run {cmd[0]}: {exc}", file=sys.stderr)
+        return 2
+
+
+def machine_status(state: Path) -> dict:
+    """What `status` reports, as data (`status --json` prints exactly this)."""
+    from .channel import app_version
+
+    cfg = load_remote_config(state)
+    out: dict = {
+        "version": app_version(),
+        "state_dir": str(state),
+        "joined": cfg is not None,
+        "identity": None,
+        "sealing_key": None,
+        "controller": None,
+        "name": None,
+        "machine_id": None,
+    }
+    if (state / KEY_FILENAME).exists():
+        identity = load_or_create(state)
+        out["identity"] = identity.fingerprint
+        out["sealing_key"] = identity.seal_fingerprint
+    if cfg is not None:
+        out.update(
+            controller=cfg["controller"],
+            name=cfg.get("name", ""),
+            machine_id=cfg.get("machine_id", ""),
+        )
+    return out
+
+
+def _cmd_status(state: Path, as_json: bool = False) -> int:
+    if as_json:
+        print(json.dumps(machine_status(state), indent=2))
+        return 0
     cfg = load_remote_config(state)
     key_path = state / KEY_FILENAME
     print(f"state dir:   {state}")

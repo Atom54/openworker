@@ -41,7 +41,7 @@ from .stores import Ephemera, InMemoryEphemera, Registry
 TOKEN_TTL_SECONDS = 600.0
 _CHALLENGE_BYTES = 32
 
-# Device-authorization flow (`openworker auth join`): the box asks, the user
+# Device-authorization flow (`openworker join`): the box asks, the user
 # approves in the controller UI, approval mints the one join token.
 DEVICE_TTL_SECONDS = 900.0
 DEVICE_POLL_SECONDS = 5
@@ -137,7 +137,7 @@ class RemoteAcceptor:
                     "connected": live is not None,
                     # Public halves only. The sealing key lets a BROWSER seal
                     # deploys to this machine (OPE-149); its fingerprint is
-                    # what the user checks against `openworker status`.
+                    # what the user checks against `openworker machine status`.
                     "seal_pubkey": row.get("seal_pubkey") or "",
                     "seal_fingerprint": (
                         _fingerprint(row["seal_pubkey"])
@@ -314,7 +314,7 @@ def mount_acceptor(
         acceptor.disarm()
         return {"armed": False}
 
-    # -- device-authorization flow (`openworker auth join`) --------------------
+    # -- device-authorization flow (`openworker join`) --------------------
     # start/poll are machine-facing and tokenless (like /j/ and /ws/machine);
     # listing and approve/deny ride the GUI's sidecar-token middleware. The
     # approval MINTS the one join token, bound to the requesting identity —

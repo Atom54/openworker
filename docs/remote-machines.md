@@ -44,7 +44,7 @@ echo 'export PATH=$HOME/ow-venv/bin:$PATH' >> ~/.bashrc && source ~/.bashrc
 Check it:
 
 ```bash
-openworker status
+openworker machine status
 ```
 
 You should see `controller: not joined` — a fresh, unenrolled machine.
@@ -85,7 +85,7 @@ openworker join http://127.0.0.1:8765/j/<token> --name=my-box
 ```
 
 The card flips to **“✓ my-box joined”** and shows the machine's key
-fingerprint. Verify it matches `openworker status` on the machine — that
+fingerprint. Verify it matches `openworker machine status` on the machine — that
 fingerprint is the machine's permanent identity. The token is single-use and
 already dead; reconnects authenticate with the machine's own keypair, so you
 never enroll twice.
@@ -103,7 +103,7 @@ your desktop is not in the loop at runtime). Three ways:
 - **On the machine itself**, if you'd rather keys never transit anywhere:
 
 ```bash
-openworker secrets set provider:openai api_key=sk-...
+openworker machine keys set provider:openai api_key=sk-...
 ```
 
   (Or inject via environment/secret-manager — the machine's store resolves
@@ -136,7 +136,7 @@ Slack, …) are *not* copied between machines — each machine connects its own.
 To keep the machine serving across logouts and reboots, on the machine:
 
 ```bash
-openworker service install
+openworker machine service install
 ```
 
 This writes and enables a systemd user unit running `openworker up`
@@ -146,7 +146,7 @@ This writes and enables a systemd user unit running `openworker up`
 sudo loginctl enable-linger $USER
 ```
 
-`openworker service uninstall` reverses it. (If you used the SSH-tunnel
+`openworker machine service uninstall` reverses it. (If you used the SSH-tunnel
 option, remember the tunnel on your desktop needs the same treatment —
 `autossh` or a LaunchAgent — or the machine will wait patiently for a tunnel
 that isn't there.)
@@ -179,6 +179,6 @@ and cloud features on top, and signing out hides only those.
 | Turn fails with a key error | The machine resolves models with **its** keys — deploy one (§3) or check the machine's model settings via the session's model picker. |
 
 State on the machine lives in `~/.config/coworker` (identity keys, secrets,
-conversations). `openworker leave` forgets the enrollment *and* the identity —
+conversations). `openworker machine leave` forgets the enrollment *and* the identity —
 re-joining afterwards needs a fresh join URL, and the old entry can be removed
 from the desktop's Machines page.
