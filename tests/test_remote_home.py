@@ -1661,9 +1661,9 @@ def test_service_install_refuses_non_linux_and_unjoined(tmp_path, capsys):
     from coworker.remote import joiner
 
     args = argparse.Namespace(service_command="install")
-    # Not Linux → clear refusal.
-    assert joiner._cmd_service(tmp_path, args, platform="darwin", home=tmp_path) == 2
-    assert "targets Linux/systemd" in capsys.readouterr().err
+    # Neither Linux nor macOS → clear refusal (macOS has its own launchd path now).
+    assert joiner._cmd_service(tmp_path, args, platform="win32", home=tmp_path) == 2
+    assert "Linux (systemd) and macOS (launchd)" in capsys.readouterr().err
     # Linux but never joined → point at `join` first.
     assert joiner._cmd_service(tmp_path, args, platform="linux", home=tmp_path) == 2
     assert "has not joined" in capsys.readouterr().err

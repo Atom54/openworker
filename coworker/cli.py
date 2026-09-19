@@ -34,9 +34,10 @@ commands:
                 join <link>     enroll with the join link from the app, then serve
                 auth join <url> enroll by approving a code in the app, then serve
                 up              serve again with the stored identity
-                status          show enrollment and the sealing-key fingerprint
+                status          show enrollment and the sealing-key fingerprint (--json)
                 keys            manage provider keys stored on this machine
-                service         run `up` as a background service
+                service         run `up` as a background service (systemd, launchd)
+                logs            show the service's log (-f to follow)
                 leave           forget this machine's enrollment and identity
   version     print the version
 
