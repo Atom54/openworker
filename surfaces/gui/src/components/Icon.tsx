@@ -18,6 +18,8 @@ export type IconName =
   | "sliders"
   | "gear"
   | "inbox"
+  | "monitor"
+  | "cloud"
   | "code"
   | "wrench"
   | "pencil"
@@ -43,6 +45,7 @@ export type IconName =
   | "mic"
   | "stop"
   | "warning"
+  | "user"
   | "x";
 
 export function Icon({
@@ -110,6 +113,13 @@ export function Icon({
           <path d="M15 4.5v15" />
         </svg>
       );
+    case "user":
+      return (
+        <svg {...s}>
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M4.8 20.2c.9-3.6 3.7-5.4 7.2-5.4s6.3 1.8 7.2 5.4" />
+        </svg>
+      );
     case "signOut":
       return (
         <svg {...s}>
@@ -129,6 +139,21 @@ export function Icon({
         <svg {...s}>
           <path d="M12 3.2l7 2.8v5.1c0 4.3-2.9 7.4-7 9.7-4.1-2.3-7-5.4-7-9.7V6l7-2.8z" />
           <path d="M9.3 12.1l1.9 1.9 3.5-3.6" />
+        </svg>
+      );
+    case "monitor":
+      // A machine that is a real box (VM, server): screen on a stand.
+      return (
+        <svg {...s}>
+          <rect x="3" y="4" width="18" height="12" rx="1.5" />
+          <path d="M8 20h8M12 16v4" />
+        </svg>
+      );
+    case "cloud":
+      // A managed sandbox (Fly): cloud outline.
+      return (
+        <svg {...s}>
+          <path d="M7 18a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9H7z" />
         </svg>
       );
     case "file":

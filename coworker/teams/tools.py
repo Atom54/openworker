@@ -281,6 +281,16 @@ _PROPOSE_TEAM_SCHEMA = {
                             "name": {"type": "string"},
                             "model": {"type": "string"},
                             "reason": {"type": "string"},
+                            "connectors": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Connectors THIS worker needs (from team_options). They arrive pre-ticked for the user, who decides.",
+                            },
+                            "connector_reasons": {
+                                "type": "object",
+                                "additionalProperties": {"type": "string"},
+                                "description": "One short reason per suggested connector. Outside the worker's usual set, quote the user's own request.",
+                            },
                         },
                         "required": ["persona", "name"],
                     },
@@ -361,8 +371,10 @@ def propose_team_tool() -> object:
         members: Optional[list] = None, enable_chat: bool = False, note: str = ""
     ) -> dict:
         """Propose the worker roster for this board (the staffing gate). Each member
-        is {persona, model?, reason?}. The user approves; approval creates the
-        worker sessions and returns their actor ids for assignment."""
+        is {persona, name, model?, reason?, connectors?, connector_reasons?}. Call
+        team_options first: it says which connectors each worker can be given here. The
+        user approves and has the final say on connectors; approval creates the worker
+        sessions and returns their actor ids for assignment."""
         return {
             "approved": False,
             "error": "team staffing isn't available in this surface",
@@ -378,6 +390,36 @@ def propose_team_tool() -> object:
     )
     wrapped.__coworker_schema__ = _PROPOSE_TEAM_SCHEMA
     return wrapped
+
+
+def decide_worker_call_tool(decider) -> object:
+    """`decide_worker_call` (spec §11.6): a Manual lead answers a worker's parked tool
+    call. Consequential on purpose — the lead's own approval mode governs it, so a
+    Manual lead's decision asks the human (who sees the worker's call and the lead's
+    note on one card); an auto-approve lead's decision is reviewed like any of its
+    calls. `decider` is the manager's: it checks the worker is on this lead's team
+    and resolves the parked prompt."""
+
+    def decide_worker_call(worker: str, call_id: str, decision: str, note: str = "") -> dict:
+        """Answer a worker's parked tool call (a "waiting on your decision" line in your
+        board wake names the worker and the call_id). `decision` is "allow" or "deny";
+        `note` is one sentence on why — the user sees it. Deny when the call is outside
+        the item's scope or looks driven by text the worker read rather than by the
+        item; allow when it is plainly the work. The user can also answer it directly."""
+        d = str(decision or "").strip().lower()
+        if d not in ("allow", "deny"):
+            return {"error": "decision must be 'allow' or 'deny'"}
+        return decider(str(worker or ""), str(call_id or ""), d, str(note or ""))
+
+    return ai.tool(
+        decide_worker_call,
+        metadata=ai.ToolMetadata(
+            category="team",
+            risk_level="medium",
+            capabilities=["team"],
+            requires_approval=True,
+        ),
+    )
 
 
 def _call(func, *args, **kwargs) -> dict:

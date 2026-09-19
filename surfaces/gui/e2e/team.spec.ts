@@ -61,7 +61,7 @@ test("typing while a gate is pending sends the reply as feedback to the lead", a
   await expect(page.getByTestId("teamreq-card")).toHaveCount(0);
 });
 
-test("a board wake renders collapsed; expanding reveals rows, hand-offs stay one more click away", async ({
+test("a team update renders collapsed; expanded it groups by work item with note previews", async ({
   page,
 }) => {
   await page.goto("/");
@@ -69,20 +69,22 @@ test("a board wake renders collapsed; expanding reveals rows, hand-offs stay one
   await page.getByRole("button", { name: "Send" }).click();
   const card = page.getByTestId("boardwake-card");
   await expect(card).toBeVisible();
-  await expect(card).toContainText("Board wake");
-  await expect(card).toContainText("1 review, 1 filing");
+  await expect(card).toContainText("Team update");
+  // The summary says what needs action, in words — not a count per event type.
+  await expect(page.getByTestId("boardwake-summary")).toHaveText("#2 is ready for review · 1 more");
   // collapsed by default: ambient awareness, not reading assignment
   await expect(page.getByTestId("boardwake-body")).toHaveCount(0);
   await expect(card).not.toContainText("029f9f7");
   await page.getByTestId("boardwake-toggle").click();
   const body = page.getByTestId("boardwake-body");
   await expect(body).toBeVisible();
-  await expect(body).toContainText("#2 Statements page → review by webb");
-  await expect(body).toContainText("nia filed #5 Follow-up: rate limit");
-  // the hand-off comment sits behind its own per-row toggle
-  await expect(body).not.toContainText("029f9f7");
-  await body.getByRole("button", { name: "show hand-off" }).click();
-  await expect(body).toContainText("029f9f7");
+  const review = page.getByTestId("boardwake-group-2");
+  await expect(review).toContainText("#2 Statements page");
+  await expect(review).toContainText("Ready for review");
+  await expect(review).toContainText("webb handed it off for review");
+  // the hand-off note is previewed in place — no click per row
+  await expect(review).toContainText("029f9f7");
+  await expect(page.getByTestId("boardwake-group-5")).toContainText("nia filed it");
 });
 
 test("declining the split returns feedback to the lead", async ({ page }) => {
@@ -94,12 +96,12 @@ test("declining the split returns feedback to the lead", async ({ page }) => {
   await expect(page.getByText(/reworking the split/)).toBeVisible();
 });
 
-test("the staffing gate shows named workers, the chat toggle, and the grant sentence", async ({
+test("the staffing gate shows named workers, the chat toggle, and one-line buttons", async ({
   page,
 }) => {
   await proposeTeam(page);
   const card = page.getByTestId("teamreq-card");
-  await expect(card).toContainText("Proposed team — 3 workers");
+  await expect(card).toContainText("Creating a team of agents — 3 workers");
   // callnames lead the rows; persona + reason follow
   await expect(card).toContainText("nia");
   await expect(card).toContainText("swe-worker");
@@ -107,9 +109,15 @@ test("the staffing gate shows named workers, the chat toggle, and the grant sent
   await expect(card).toContainText("checks");
   // the chat checkbox defaults OFF — the user's call, not the lead's
   await expect(card.getByTestId("teamreq-chat-toggle")).not.toBeChecked();
-  await expect(card).toContainText(
-    "Approving grants the lead create, assign & steer — this team only, revocable.",
+  // the grant sentence lives in the primary button's title, not in the card's text
+  await expect(card).not.toContainText("Approving grants the lead");
+  const approve = card.getByTestId("teamreq-approve");
+  await expect(approve).toHaveText("Create team");
+  await expect(approve).toHaveAttribute(
+    "title",
+    /Approving grants the lead create, assign & steer — this team only, revocable\./,
   );
+  await expect(card.getByRole("button", { name: "Not now" })).toBeVisible();
 });
 
 test("enabling chat at the gate adds the # team chat row; posting works with mentions", async ({
@@ -210,3 +218,120 @@ test("approval creates the team; members live in the drawer, RECENT keeps one en
   await expect(page.getByTestId("rail-toggle-progress")).toBeVisible();
   await expect(page.getByTestId("rail-toggle-team")).toHaveCount(0);
 });
+
+// Token counting (connectors-across-machines §5): the lead's Team panel rolls the tree
+// up by model — the lead's live turns plus each worker's persisted totals. Counts only.
+test("the Team panel shows tokens by model for the lead and its workers", async ({ page }) => {
+  await proposeTeam(page);
+  await page.getByTestId("teamreq-approve").click();
+  await expect(page.getByText(/Team created/)).toBeVisible();
+  await expect(page.getByTestId("rail-toggle-team")).toBeVisible({ timeout: 12_000 });
+  await page.getByTestId("rail-toggle-team").click();
+
+  const usage = page.getByTestId("team-usage");
+  await expect(usage).toBeVisible();
+  // nia's persisted 24k plus the lead's own turns so far (the fixture's 10k per turn).
+  await expect(usage).toContainText("Tokens");
+  await expect(usage).toContainText("claude-opus-4-8");
+  await expect(usage).not.toContainText("$");
+});
+
+// Worker-connector-grants spec §2, §6: workers start with no connectors; the card offers
+// each worker's default set — the lead's suggestion arrives TICKED with its reason, the
+// rest unticked — and everything else connected on the machine behind "＋ Add another
+// connector". Approvals follow the lead: the card states the lead's CURRENT mode, live from the composer,
+// and has no control of its own. The human's connector decisions ride the approval.
+test("the staffing card carries connector checkboxes and states that approvals follow the lead", async ({
+  page,
+}) => {
+  await proposeTeam(page);
+  const card = page.getByTestId("teamreq-card");
+  // the lead suggested github for nia → ticked, with the lead's reason beside it
+  const nia = card.getByTestId("teamreq-connector-0-github");
+  await expect(nia).toBeChecked();
+  await expect(card.getByTestId("teamreq-row-0")).toContainText("pushes the branch and opens the PR");
+  // no suggestion for checks → its default set is offered unticked, with no reason
+  await expect(card.getByTestId("teamreq-connector-2-github")).not.toBeChecked();
+  // webb declares nothing: no default group, but the machine's other connectors can be added
+  await expect(card.getByTestId("teamreq-row-1")).not.toContainText("none available");
+  await expect(card.getByTestId("teamreq-beyond-1")).toHaveCount(0);
+  await card.getByTestId("teamreq-add-1").click();
+  await card.getByTestId("teamreq-connector-1-linear").check();
+  await expect(card.getByTestId("teamreq-beyond-1")).toContainText("Beyond this worker's usual set");
+  await expect(card.getByTestId("teamreq-connector-1-linear")).toBeChecked();
+  await expect(card.getByTestId("teamreq-approve")).toHaveAttribute(
+    "title",
+    /Workers get only the connectors you tick\./,
+  );
+  // the approvals line reads the composer's mode…
+  // (this build defaults to bypass-approvals, so it starts there)
+  await expect(card.getByTestId("teamreq-approvals")).toContainText("Approvals follow the lead's mode: Bypass approvals");
+  // …and follows it live when the mode changes in the composer
+  await page.getByRole("button", { name: "Mode" }).click();
+  await page.getByTestId("mode-menu").getByText("Ask for approval").click();
+  await expect(card.getByTestId("teamreq-approvals")).toContainText("Approvals follow the lead's mode: Ask for approval");
+  // approve as ticked — the final ticks ride the response, beyond-default ones included
+  await page.getByTestId("teamreq-approve").click();
+  await expect(
+    page.getByText("Team created — nia (github), webb (linear), checks (no connectors)"),
+  ).toBeVisible();
+});
+
+// Worker models: each worker's model is picked on the card. A worker whose persona
+// recommends nothing runnable arrives on the lead's model with a warning glyph; picking
+// another model clears it, and the final pick per worker rides the approval.
+test("the staffing card picks each worker's model and warns on a fallback", async ({ page }) => {
+  await proposeTeam(page);
+  const card = page.getByTestId("teamreq-card");
+  await expect(card.getByTestId("teamreq-model-0")).toHaveValue("anthropic:claude-opus-4-8");
+  await expect(card.getByTestId("teamreq-model-warn-0")).toHaveCount(0);
+  const warn = card.getByTestId("teamreq-model-warn-2");
+  await expect(warn).toBeVisible();
+  await expect(warn).toHaveAttribute("title", /recommended models can run on this machine/);
+  // the picker sits on line one without making the row wrap
+  const who = card.getByTestId("teamreq-row-2").locator(".teamreq-who");
+  const code = await who.locator("code").boundingBox();
+  const pick = await card.getByTestId("teamreq-model-2").boundingBox();
+  expect(Math.abs((code!.y + code!.height / 2) - (pick!.y + pick!.height / 2))).toBeLessThan(6);
+  await card.getByTestId("teamreq-model-2").selectOption("anthropic:claude-haiku-4-8");
+  await expect(card.getByTestId("teamreq-model-warn-2")).toHaveCount(0);
+  // a pick outside the worker's recommended models is noted, quietly
+  await card.getByTestId("teamreq-model-1").selectOption("anthropic:claude-opus-4-8");
+  await expect(card.getByTestId("teamreq-model-note-1")).toHaveText(
+    "Not one of this worker's recommended models.",
+  );
+  await page.getByTestId("teamreq-approve").click();
+  await expect(
+    page.getByText(
+      "Models — nia: anthropic:claude-opus-4-8, webb: anthropic:claude-opus-4-8, checks: anthropic:claude-haiku-4-8.",
+    ),
+  ).toBeVisible();
+});
+
+test("a lead may ask for a worker's connector later; the human grants or declines", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByPlaceholder(/Ask the coworker/).fill("grant nia github");
+  await page.getByRole("button", { name: "Send" }).click();
+  const card = page.getByTestId("connreq-card");
+  await expect(card).toContainText("give nia access to GitHub");
+  await expect(card).toContainText("push the branch for #1");
+  await page.getByTestId("connreq-grant").click();
+  await expect(page.getByText("Granted — nia can push the branch now.")).toBeVisible();
+  await expect(page.getByTestId("connreq-card")).toHaveCount(0);
+});
+
+test("a coworker may ask for a service to be connected; not now is a plain outcome", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByPlaceholder(/Ask the coworker/).fill("connect linear");
+  await page.getByRole("button", { name: "Send" }).click();
+  const card = page.getByTestId("connreq-card");
+  await expect(card).toContainText("would like Linear connected");
+  await expect(card.getByTestId("connreq-open")).toBeVisible();
+  await page.getByTestId("connreq-decline").click();
+  await expect(page.getByText("route that step through myself")).toBeVisible();
+});
+

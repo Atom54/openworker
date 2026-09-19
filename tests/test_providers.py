@@ -565,7 +565,12 @@ def test_matrix_labels_and_custom_model_fallback():
     # Deliberately small: agent-capable current models only (owner call, 2026-07-04).
     # 60→65 (2026-08-24): the stealth ox-alpha preview slug tipped it; reclaim slack by
     # pruning retired entries before raising this again.
-    assert len(MATRIX) < 65
+    # 65→70 (2026-09-16): three Claude 4.5/4.6 rows added for comparability with
+    # published evaluations of those models. The
+    # pruning owed above is NOT done here — deciding which entries are retired is an owner
+    # call, and dropping a row silently downgrades that model to the conservative fallback
+    # capabilities. Prune before raising this a third time.
+    assert len(MATRIX) < 70
     assert all(e.caps.tools for e in MATRIX.values())
     # A custom (unlisted) reseller model falls back to the conservative default — usable,
     # but at the user's own risk (no parallel tool calls assumed).
@@ -721,63 +726,6 @@ def test_complete_picks_up_reasoning_content():
     turn = provider.complete(model="deepseek-v4-pro", messages=[{"role": "user", "content": "x"}])
     assert turn.text == "Answer" and turn.reasoning == "deep thought"
 
-
-# -- per-call settings the target wire can't take ---------------------------------
-
-
-def test_router_drops_reasoning_effort_for_wires_that_reject_it():
-    """`reasoning_effort` rides the SESSION (an automation's thinking level), and the model
-    can be switched mid-session — so the router, the one place that knows which client a
-    call lands on, is what keeps it off Anthropic and the Chat Completions vendors."""
-    from coworker.providers.router import ProviderRouter
-
-    seen: dict[str, dict] = {}
-
-    class _Wire:
-        def __init__(self, name, accepts):
-            self.name = name
-            self.accepts_reasoning_effort = accepts
-
-        def complete(self, **kw):
-            seen[self.name] = kw
-            return "ok"
-
-        def stream(self, **kw):
-            seen[self.name] = kw
-            return iter(())
-
-        def capabilities(self, model):
-            return None
-
-    router = ProviderRouter()
-    wires = {"responses": _Wire("responses", True), "chat": _Wire("chat", False)}
-    router._clients = {"openai": wires["responses"], "anthropic": wires["chat"]}
-    router._default = "openai"
-
-    router.complete(model="gpt-5.6-sol", messages=[], reasoning_effort="high", temperature=0.2)
-    assert seen["responses"]["reasoning_effort"] == "high"
-    assert seen["responses"]["temperature"] == 0.2  # other settings untouched
-
-    router.complete(model="anthropic:claude-fable-5", messages=[], reasoning_effort="high", temperature=0.2)
-    assert "reasoning_effort" not in seen["chat"]
-    assert seen["chat"]["temperature"] == 0.2
-
-    # streaming takes the same path
-    seen.clear()
-    list(router.stream(model="anthropic:claude-fable-5", messages=[], reasoning_effort="low"))
-    assert "reasoning_effort" not in seen["chat"]
-
-
-def test_responses_wires_declare_they_take_a_reasoning_level():
-    """The declaration is what the router reads — a new provider opts in by setting it."""
-    from coworker.providers.anthropic_provider import AnthropicProvider
-    from coworker.providers.azure_provider import AzureFoundryProvider
-    from coworker.providers.openai_responses import OpenAIResponsesProvider
-
-    assert OpenAIResponsesProvider.accepts_reasoning_effort
-    assert AzureFoundryProvider.accepts_reasoning_effort
-    assert not OpenAIProvider.accepts_reasoning_effort  # plain Chat Completions
-    assert not AnthropicProvider.accepts_reasoning_effort  # thinking is provider-level
 
 def test_default_max_tokens_injected_and_caller_setting_wins():
     """Compat servers left to their OWN defaults cap completions absurdly low

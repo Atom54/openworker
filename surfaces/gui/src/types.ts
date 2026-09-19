@@ -9,6 +9,7 @@ export type EventType =
   | "permission_required"
   | "directory_requested"
   | "tool_requested"
+  | "connector_requested"
   | "question_requested"
   | "plan_proposed"
   | "team_proposed"
@@ -25,6 +26,7 @@ export type EventType =
   | "memory_saved"
   | "compacting"
   | "compacted"
+  | "continuation"
   | "turn_done";
 
 export interface WsEvent {
@@ -45,6 +47,12 @@ export type ApprovalDecision =
   | "always_command"
   | "always_domain"
   | "always_task"
+  // OPE-136 §4: durable per-MCP-tool trust — writes a rule to the user-local
+  // override store; survives sessions; revocable on the server's detail page.
+  | "always_trust"
+  // OPE-136 run grant: covers the exact tool for the remainder of the current
+  // answer only; in-memory, cleared at the run boundary. EXTERNAL family only.
+  | "this_run"
   | "readonly_session";
 
 export interface TodoItem {
@@ -95,6 +103,17 @@ export interface SessionInfo {
   // "From Slack" group and the row's platform icon.
   origin?: string;
   origin_label?: string;
+  // Remote homes (UX-045): set client-side when the row came from a joined machine's
+  // store (fetched through the proxy prefix). Absent = a This-Mac session. Drives the
+  // ⌂ badge, the Machine grouping, and machine-aware routing of session API calls.
+  machine?: string;
+  machine_name?: string;
+  // Set when the row came from the controller's stored snapshot because the
+  // machine is offline — the sidebar greys it, and opening it explains why.
+  machine_offline?: boolean;
+  // Per-model token totals persisted by the box (spec §5) — {model: {input, output,
+  // cache_read, cache_write, turns}}. The lead's Team panel rolls its workers up.
+  usage?: Record<string, TurnUsage & { turns?: number }>;
   // Agent teams: {} / absent for plain sessions. Workers carry role/lead_session
   // (+ a computed current-item line); leads carry role/team_id. Drives the sidebar's
   // ONE expandable team entry (workers nest under their lead; plain rows never expand).
@@ -162,6 +181,13 @@ export type Item =
       // Server-classified: this shell command only reads locally, so the card may offer
       // the session-wide "Allow read-only commands" grant.
       readonlyOk?: boolean;
+      // decide_worker_call only: the worker's waiting call this decision answers, looked
+      // up by the server so the card can show it (absent from an older server).
+      workerCall?: { worker?: string; tool: string; arguments?: any; reason?: string; state?: string; resolution?: string | null };
+      // OPE-136 finding 4: where an MCP call actually goes, from the server DEF (the
+      // user's own config, never the server's claims). Drives the honest scope chip —
+      // "leaves this computer → host" (http) / "runs a local program" (stdio).
+      mcpDestination?: { transport: string; host?: string };
       resolved?: ApprovalDecision;
     }
   | {
@@ -190,10 +216,46 @@ export type Item =
   | {
       // The staffing gate (agent teams): a lead proposes its worker roster.
       kind: "teamreq";
-      members: { persona: string; name?: string; model?: string; reason?: string }[];
+      // connectors = the LEAD'S SUGGESTION for this worker (arrives ticked on the card);
+      // connector_reasons = why, per suggested connector.
+      members: {
+        persona: string;
+        name?: string;
+        model?: string;
+        reason?: string;
+        connectors?: string[];
+        connector_reasons?: Record<string, string>;
+        // The model this worker WILL run on if the human changes nothing on the card.
+        resolved_model?: string;
+        // Set when none of the persona's recommended models can run on this machine.
+        model_warning?: string;
+      }[];
       enable_chat?: boolean;
       note?: string;
+      // Per worker persona, its RECOMMENDED models that can run on this machine, in order.
+      model_options?: Record<string, string[]>;
+      // Every model that can run on this machine. Present → the card offers a model
+      // picker per worker; absent (older server) → the model stays plain text.
+      runnable_models?: { id: string; label: string }[];
+      lead_model?: string;
+      // Per worker persona, its DEFAULT set that is connected on the machine.
+      offer?: Record<string, string[]>;
+      // Every other connector connected on the machine — a human may extend a worker
+      // beyond its default set from this list (worker-connector-grants spec §2, §6).
+      other_connected?: string[];
+      // The lead's real approval mode, for a card rendered away from the composer (Inbox).
+      lead_mode?: string;
       resolved?: "approved" | "rejected";
+    }
+  | {
+      // Spec §11.6: connector access is a human decision. "connect" = the coworker asks
+      // for a service to be connected; "grant" = a lead asks to give a worker a connector.
+      kind: "connreq";
+      request: "connect" | "grant";
+      connector: string;
+      worker?: string;
+      reason: string;
+      resolved?: "approved" | "declined";
     }
   | {
       // The decomposition gate: a lead proposes work items; approval creates them.

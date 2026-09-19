@@ -11,6 +11,7 @@ import { ConnectSetup } from "../ManageTabs";
 import type { DetailProps } from "./ConnectorsSection";
 import { GoogleOneClickSetup } from "./GoogleOneClick";
 import { ToolsDisclosure } from "./ToolsDisclosure";
+import { WalletChips } from "../WalletChips";
 import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "./ui";
 
 // The generic detail page for multi-account connectors on the accounts layer
@@ -42,10 +43,10 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
       <div className="flex items-center gap-3.5 mb-5">
         <ConnectorBadge connector={c} size={44} title={c.title} />
         <div className="min-w-0 flex-1">
-          <h2 className="text-[20px] font-semibold tracking-tight leading-tight">
+          <h2 className="text-title font-semibold tracking-tight leading-tight">
             {c.title}
           </h2>
-          <div className="text-[13px] text-muted flex items-center gap-1.5">
+          <div className="text-ui text-muted flex items-center gap-1.5">
             {c.connected ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-ok" />
@@ -83,6 +84,22 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
               <Row key={a.account_id} connector={c.name} a={a} onChanged={onChanged} />
             ))}
           </div>
+          {/* Keys wallet: the DEFAULT token account (never a managed OAuth grant —
+              refresh tokens don't share; each home consents on its own) can deploy
+              to machines. The account travels with the default pointer so the box
+              actually uses it. */}
+          {(() => {
+            const deployable = accounts.find((a) => a.default && !a.managed);
+            return deployable ? (
+              <WalletChips
+                profiles={[
+                  `${c.name}:account:${deployable.account_id}`,
+                  `${c.name}:default`,
+                ]}
+                caption={t("settingsx.accounts.wallet_caption")}
+              />
+            ) : null;
+          })()}
         </>
       )}
 
@@ -130,18 +147,23 @@ function Row({
   return (
     <div className={ROW} data-testid={`account-${a.account_id}`}>
       <span className="min-w-0 flex-1 flex items-center gap-2">
-        <span className="text-[13px] font-medium truncate">{a.name}</span>
+        <span className="text-ui font-medium truncate">{a.name}</span>
         {a.name !== a.account_id && (
-          <span className="text-[11px] text-faint truncate" title={a.account_id}>
+          <span className="text-label text-faint truncate" title={a.account_id}>
             {a.account_id}
           </span>
         )}
-        {a.default && <span className={TAG_ACCENT}>{t("connector.default")}</span>}
+        {a.default && (
+          <span className={TAG_ACCENT} title={t("accounts.default_tip")}>
+            {t("connector.default")}
+          </span>
+        )}
         {a.needs_reauth && <span className={TAG_WARN}>{t("connector.sign_in_again")}</span>}
       </span>
       {!a.default && (
         <button
-          className="text-[12px] text-muted hover:text-ink shrink-0"
+          className="text-meta text-muted hover:text-ink shrink-0"
+          title={t("accounts.default_tip")}
           data-testid={`account-make-default-${a.account_id}`}
           onClick={async () => {
             await setDefaultAccount(connector, a.account_id);
@@ -153,7 +175,7 @@ function Row({
       )}
       <button
         className={XBTN}
-        title={t("accounts.disconnect_account_title")}
+        title={t("accounts.disconnect_tip")}
         data-testid={`account-disconnect-${a.account_id}`}
         disabled={busy}
         onClick={async () => {

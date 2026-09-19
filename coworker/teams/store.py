@@ -62,6 +62,9 @@ ITEM_TRANSITIONED = "item_transitioned"
 ITEM_COMMENTED = "item_commented"
 ITEM_ASSIGNED = "item_assigned"
 ITEM_LINKED = "item_linked"
+# §11.6: a manual-mode worker parked on a tool approval — the lead cannot approve it
+# (it holds nothing the human did not grant) but should wait knowingly or reassign.
+WORKER_WAITING = "worker_waiting"
 
 _HASHED_FIELDS = (
     "ts",
@@ -370,7 +373,7 @@ class TeamStore:
         key = f"sub:{subscriber}:{space}"
         events = self.events(
             space,
-            kinds=[ITEM_TRANSITIONED, ITEM_CREATED, ITEM_ASSIGNED],
+            kinds=[ITEM_TRANSITIONED, ITEM_CREATED, ITEM_ASSIGNED, WORKER_WAITING],
             since_seq=self._cursor(key),
             limit=limit,
         )
@@ -1217,8 +1220,9 @@ class TeamStore:
                 # Cursor keys embed the space as a suffix ("feed:<actor>:<space>",
                 # "sub:<sub>:<space>") — rewrite the suffix, keep consumed positions.
                 cur_rows = self._conn.execute(
-                    "SELECT cursor_key FROM team_cursors WHERE cursor_key LIKE ?",
-                    ("%:" + old,),
+                    "SELECT cursor_key FROM team_cursors"
+                    " WHERE cursor_key LIKE ? ESCAPE '\\'",
+                    ("%" + _like_escape(":" + old),),
                 ).fetchall()
                 for crow in cur_rows:
                     new_key = crow["cursor_key"][: -len(old)] + new
@@ -1261,6 +1265,15 @@ class TeamStore:
                 f" {sorted(role.value for role in roles)} (actor {actor.id} is"
                 f" {actor.role.value})"
             )
+
+
+def _like_escape(text: str) -> str:
+    """Quote LIKE metacharacters so a literal string matches only itself. Space
+    keys are filesystem paths, where `_` (LIKE's single-character wildcard) is
+    ordinary — left raw it also matches a neighbouring space's rows."""
+    for char in ("\\", "%", "_"):
+        text = text.replace(char, "\\" + char)
+    return text
 
 
 def _canonical(payload: dict[str, Any]) -> str:

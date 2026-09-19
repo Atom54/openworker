@@ -10,6 +10,7 @@ async function openGithubPage(page) {
   await page.getByTestId("account-row").click();
   await page.getByRole("button", { name: "Connectors", exact: true }).click();
   await page.getByTestId("connector-github").click();
+  await page.getByTestId("manage-local-github").click();
 }
 
 test("lists each installation as its own group with people and waiting rows", async ({
@@ -54,6 +55,7 @@ test("add installation opens the modal; signed in installs a second org", async 
   await page.getByTestId("account-sign-in").click();
   await expect(page.getByTestId("account-row")).toContainText("Rohit", { timeout: 10_000 });
   await page.getByTestId("connector-github").click();
+  await page.getByTestId("manage-local-github").click();
   await page.getByTestId("add-installation-btn").click();
   await page.getByTestId("modal-install-github-app").click();
   // the mock completes the browser install instantly; the page's poll shows it
@@ -76,6 +78,7 @@ test("modal has ONE connect button and sends no flow — authorize-first lives i
   await page.getByTestId("account-sign-in").click();
   await expect(page.getByTestId("account-row")).toContainText("Rohit", { timeout: 10_000 });
   await page.getByTestId("connector-github").click();
+  await page.getByTestId("manage-local-github").click();
 
   let flowSent: string | null = null;
   await page.route("**/v1/connectors/github/connect-managed", async (route) => {
@@ -96,6 +99,7 @@ test("disconnect removes one installation and keeps the rest", async ({ page }) 
   await page.getByTestId("account-sign-in").click();
   await expect(page.getByTestId("account-row")).toContainText("Rohit", { timeout: 10_000 });
   await page.getByTestId("connector-github").click();
+  await page.getByTestId("manage-local-github").click();
   await page.getByTestId("add-installation-btn").click();
   await page.getByTestId("modal-install-github-app").click();
   await expect(page.getByTestId("github-install-202")).toBeVisible({ timeout: 10_000 });

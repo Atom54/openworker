@@ -136,6 +136,27 @@ def _ensure_api_token(port: int) -> Path | None:
     )
 
 
+_ENGINE_LOCK = None
+
+
+def _warn_if_state_shared() -> None:
+    """The desktop sidecar runs on a random port precisely so it can coexist with
+    a hand-run `openworker-server` on the same state dir, so this entrypoint only
+    WARNS about a second engine (statelock.py). `openworker up` refuses outright;
+    set COWORKER_STATE_LOCK=strict to make this server refuse too."""
+    global _ENGINE_LOCK
+    from ..statelock import EngineBusy, acquire
+
+    strict = os.environ.get("COWORKER_STATE_LOCK") == "strict"
+    try:
+        _ENGINE_LOCK = acquire(state_dir(), timeout=10.0 if strict else 0.0)
+    except EngineBusy as exc:
+        if strict:
+            print(f"error: {exc}", file=sys.stderr)
+            raise SystemExit(3)
+        print(f"warning: {exc}", file=sys.stderr)
+
+
 def main(argv=None) -> None:
     _ensure_ca_bundle()
     cfg = load_config()  # global config supplies defaults
@@ -161,6 +182,7 @@ def main(argv=None) -> None:
         import uvicorn
 
         _exit_when_orphaned()
+        _warn_if_state_shared()
         app = build_app(args.cwd, args.model, args.mode)
         uvicorn.run(
             app, host=args.host, port=args.port, ws_max_size=_WS_MAX_FRAME_BYTES

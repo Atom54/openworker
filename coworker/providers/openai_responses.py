@@ -319,8 +319,6 @@ def _parse_response(response: Any) -> AssistantTurn:
 
 
 class OpenAIResponsesProvider(ProviderClient):
-    accepts_reasoning_effort = True  # `reasoning.effort` — this API's whole point
-
     def __init__(
         self,
         client: Any = None,

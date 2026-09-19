@@ -71,6 +71,21 @@ class AssistantTurn:
     # Token counts for this round-trip, normalized across providers. None when the
     # backend didn't report usage (some compat servers) — never guessed.
     usage: Optional[TokenUsage] = None
+    # The per-reply output-token ceiling the provider actually sent on this request
+    # (`max_tokens` / `max_completion_tokens` / `max_output_tokens`), after any
+    # provider-side adjustment (Anthropic budget floor, OpenAI rename). None when the
+    # provider left it to the server. Persisted on the assistant message as the
+    # `max_output_tokens` sidecar so a run record states its ceiling (OPE-177).
+    output_limit: Optional[int] = None
+    # The reasoning-effort mapping used for this request (OPE-176):
+    # {requested, effective, param?, note?} — see providers/effort.py. None when no
+    # level was configured or the provider has no such knob. Persisted on the
+    # assistant message as the `reasoning_effort` sidecar.
+    effort: Optional[dict[str, Any]] = None
+    # The upstream host that served this reply, when a router names it (OpenRouter's
+    # top-level `provider`, e.g. "Together"). Persisted as the `served_by` sidecar so a
+    # run pinned to one host can prove the pin held on every reply.
+    served_by: Optional[str] = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -105,13 +120,6 @@ class ProviderClient(ABC):
     Deliberately blocking (the turn engine wraps it in `asyncio.to_thread`) and
     deliberately without a `max_turns` loop — the runtime owns the agent loop.
     """
-
-    # Whether this wire takes a per-call `reasoning_effort`. Only the Responses API does:
-    # Anthropic configures thinking on the provider itself and Chat Completions backends
-    # reject the parameter (Azure 400s on it at any value). The router reads this to drop
-    # the setting for wires that can't take it, so a mid-session model switch can't send
-    # it somewhere it doesn't belong.
-    accepts_reasoning_effort: bool = False
 
     @abstractmethod
     def complete(

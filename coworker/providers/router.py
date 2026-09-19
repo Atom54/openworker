@@ -68,21 +68,6 @@ class ProviderRouter(ProviderClient):
             return client
 
     @staticmethod
-    def _supported(client: ProviderClient, settings: dict[str, Any]) -> dict[str, Any]:
-        """Drop per-call settings the target wire can't take.
-
-        `reasoning_effort` only exists on the Responses API. It rides the session (an
-        automation's thinking level, carried on the session record), and the model can be
-        switched mid-session — so the check belongs HERE, at the one place that knows which
-        client a call is about to hit, not where the setting was chosen.
-        """
-        if "reasoning_effort" in settings and not getattr(
-            client, "accepts_reasoning_effort", False
-        ):
-            return {k: v for k, v in settings.items() if k != "reasoning_effort"}
-        return settings
-
-    @staticmethod
     def _bare(model: str) -> str:
         """Strip a KNOWN provider prefix; the underlying SDK wants the bare model name. A model
         whose first segment isn't a provider (e.g. `qwen2.5-coder:32b` — a version tag, not a
@@ -123,7 +108,7 @@ class ProviderRouter(ProviderClient):
             model=self._bare(model),
             messages=messages,
             tools=tools,
-            **self._supported(client, settings),
+            **settings,
         )
 
     def stream(
@@ -140,7 +125,7 @@ class ProviderRouter(ProviderClient):
             model=self._bare(model),
             messages=messages,
             tools=tools,
-            **self._supported(client, settings),
+            **settings,
         )
 
     def capabilities(self, model: str):

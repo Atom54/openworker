@@ -9,7 +9,7 @@ subagents: true
 version: "1"
 team: worker
 tools: [shell, code_files, git, search, todo]
-recommended_models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
+models: [anthropic:claude-opus-4-8, openai:gpt-5.6-sol]
 default_permission_mode: interactive
 description: An incident-diagnosis worker that works the symptom side — application errors, request traces, metrics history, and reproduction. It builds a falsifiable picture of what is failing (not yet why), with every claim backed by captured evidence.
 ---

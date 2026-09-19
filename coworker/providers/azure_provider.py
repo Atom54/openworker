@@ -48,10 +48,6 @@ def _is_missing_responses_api(exc: Exception) -> bool:
 class AzureFoundryProvider(ProviderClient):
     """Responses-first client for one Foundry resource, with a sticky Chat Completions fallback."""
 
-    # True even though the fallback wire cannot take it: the Chat Completions provider
-    # drops the parameter itself when a server rejects it (`_param_fix_retry`).
-    accepts_reasoning_effort = True
-
     def __init__(self, *, api_key: str, base_url: str) -> None:
         self._responses = OpenAIResponsesProvider(api_key=api_key, base_url=base_url)
         self._chat = OpenAIProvider(api_key=api_key, base_url=base_url)

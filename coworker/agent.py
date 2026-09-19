@@ -6,12 +6,12 @@ the skill catalog (progressive disclosure) + load_skill into a TurnEngine.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .agents import Agent, AgentContext, code_agent
 from .automation import scheduling_tools
+from .clock import clock_tools
 from .selfwake import selfwake_tools
 from .subscriptions import subscription_tools
 from .config import load_config
@@ -138,6 +138,24 @@ type their own direction). A picked option is a clear brief: start on it. Keep i
 and skip all of this when the user already gave you a task."""
 
 
+CHAT_PLATFORMS: frozenset[str] = frozenset({"slack", "telegram"})
+
+
+def _chat_platforms(
+    agent: Agent, secrets: SecretStore, connector_filter: Optional[set[str]] = None
+) -> set[str]:
+    """The chat platforms this session may post to: gateway-enabled (token or relay
+    present) ∩ the persona's `connectors:` allowlist ∩ the session's effective set."""
+    if not agent.connectors:
+        return set()
+    enabled = {name for name, s in load_settings(secrets).items() if s.enabled} & CHAT_PLATFORMS
+    if agent.connectors is not True:
+        enabled &= set(agent.connectors)
+    if connector_filter is not None:
+        enabled &= connector_filter
+    return enabled
+
+
 def _enabled_connector_tools(secrets: SecretStore) -> tuple[set[str], set[str]]:
     connectors = {c["name"]: c for c in connector_list(secrets)}
     enabled_connectors = {
@@ -194,6 +212,14 @@ def _skill_dirs(workspace: Optional[Path]) -> list[Path]:
     return dirs
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def build_engine(
     *,
     agent: Agent,
@@ -205,6 +231,11 @@ def build_engine(
     allowed_commands: Optional[list[str]] = None,
     max_iterations: Optional[int] = None,
     model_settings: Optional[dict[str, Any]] = None,
+    # OPE-186: explicit tool-result byte cap (None = config, then the 10,000 default;
+    # 0 = off) and where bounded results' full text is spilled (None = the session's
+    # scratch root if there is one, else a per-process temp directory).
+    tool_result_max_bytes: Optional[int] = None,
+    tool_result_spill_dir: Optional[str | Path] = None,
     memory_store: Optional[MemoryStore] = None,
     # Twentieth pass: the project key memory loads/saves under. Defaults to the
     # workspace path; the manager passes the resolved key (binding > git > path)
@@ -237,11 +268,19 @@ def build_engine(
     plan_approver: Optional[Any] = None,
     question_asker: Optional[Any] = None,
     tool_requester: Optional[Any] = None,
+    connector_requester: Optional[Any] = None,
     team_approver: Optional[Any] = None,
     items_approver: Optional[Any] = None,
     subscription_store: Optional[Any] = None,
     channel_buffer: Optional[Any] = None,
     routing_targets: Optional[list[str]] = None,
+    # Cloud-first subscribe / release hooks (connectors-across-machines spec §3.3):
+    # the manager's, so an agent's subscribe obeys the same one-responder rule as the UI.
+    subscription_register: Optional[Callable[[str, str], dict]] = None,
+    subscription_release: Optional[Callable[[str, str], None]] = None,
+    # §11.6: a lead's `decide_worker_call` resolves a worker's parked prompt through the
+    # manager (team membership + the durable wait queue live there).
+    worker_decider: Optional[Callable[[str, str, str, str], dict]] = None,
     connector_filter: Optional[set[str]] = None,
     # A set (static snapshot) or a zero-arg callable (live, re-evaluated per load_skill).
     skill_filter: Optional[set[str] | Callable[[], set[str]]] = None,
@@ -268,8 +307,40 @@ def build_engine(
     else:
         root_list = []
 
+    # OPE-186: bounded tool results keep their full text in a spill file the model can
+    # read, and the compaction transcript is written there too. Prefer the session's
+    # scratch root (already one of the agent's folders). Otherwise the folder joins the
+    # session's directories read-only, BEFORE the tools are built, so read_file can open
+    # it (2026-09-14: the first trial spilled under the run's log folder and read_file
+    # answered "path escapes the session's directories"). The workspace itself is never
+    # written to, so a repository or task tree stays clean.
+    if tool_result_spill_dir is not None:
+        spill_dir: Optional[Path] = Path(tool_result_spill_dir).expanduser().resolve()
+    else:
+        scratch = next((r.path for r in root_list if r.label == "scratch"), None)
+        if scratch is not None:
+            spill_dir = Path(scratch) / "tool-output"
+        else:
+            import os
+            import tempfile
+
+            spill_dir = (
+                Path(tempfile.gettempdir()) / "openworker" / f"tool-output-{os.getpid()}"
+            ).resolve()
+    # Registered, not created: the folder appears on disk only when something is spilled.
+    if root_list and not any(_is_within(spill_dir, r.path) for r in root_list):
+        root_list.append(RootDir(path=spill_dir, writable=False, label="tool-output"))
+
     workspace_trusted = bool(ws and WorkspaceTrustStore().is_trusted(ws))
     config = load_config(ws, workspace_trusted=workspace_trusted)
+    # OPE-177: the configured per-reply output ceiling rides `model_settings`, which
+    # the engine spreads into every provider call (and explorer subagents inherit).
+    # An explicit `max_tokens` from the caller wins over the config value.
+    if config.max_output_tokens is not None and "max_tokens" not in (model_settings or {}):
+        model_settings = {**(model_settings or {}), "max_tokens": config.max_output_tokens}
+    # OPE-176: the reasoning-effort level takes the same route; providers translate it.
+    if config.reasoning_effort and "reasoning_effort" not in (model_settings or {}):
+        model_settings = {**(model_settings or {}), "reasoning_effort": config.reasoning_effort}
     executor = LocalExecutor(cwd=ws) if ws is not None else None
     todo = TodoList()
     context = AgentContext(
@@ -281,10 +352,14 @@ def build_engine(
     # MCP / connector tools (supplied by the manager) carry their own metadata + schema.
     if extra_tools:
         registry.register_all(extra_tools)
-    # Messaging personas (Cowork / Ops / MyHelper) expose send_message; MyHelper also uses it as
-    # the reply path for inbound Telegram/Slack super-agent sessions.
+    # Chat tools follow the connector gate (spec §11, 2026-09-05): a session whose
+    # effective connector set includes a chat platform gets the generic reply pair
+    # (send_message / send_file, kept until §11.7 step 7) and the subscription tools.
+    # The old `messaging` trait no longer decides anything — "Slack enabled" is the
+    # whole condition; the platform's own catalog tools arrive through
+    # make_integration_tools below.
     secrets = secrets or SecretStore()
-    if agent.messaging and any(s.enabled for s in load_settings(secrets).values()):
+    if _chat_platforms(agent, secrets, connector_filter):
         registry.register(make_send_message_tool(secrets))
         # send_file (§34): hand deliverables into the chat — same targets, but its OWN
         # approval surface (a thread's standing send_message grant never covers uploads).
@@ -300,6 +375,8 @@ def build_engine(
                     session_id,
                     channel_buffer,
                     routing_targets=routing_targets,
+                    register=subscription_register,
+                    release=subscription_release,
                 )
             )
     # Surfaces with a multi-root workspace can ask the user mid-task for another folder.
@@ -367,6 +444,11 @@ def build_engine(
     # on-completion / on-event). The scheduler tick resumes due wakes.
     if wake_store is not None and session_id and agent.scheduling:
         registry.register_all(selfwake_tools(wake_store, session_id))
+    # The clock, on demand, for every surface: the system prompt's "Today's date" is a
+    # session-start snapshot, and the per-turn context block must not carry a live time
+    # (see context_provider below). Deadlines, "how long ago", and the wake time for
+    # sleep_until all come from here.
+    registry.register_all(clock_tools())
 
     instructions = f"{agent.system_prompt}\n\n{_NARRATION_GUIDANCE}\n\n{_FIRST_CONTACT_GUIDANCE}"
     if ws is not None:
@@ -442,9 +524,13 @@ def build_engine(
         )
     )
 
-    # User-local risk overrides (mainly to relax MCP's conservative default). Empty store →
-    # no-op; never written by persona loading (the no-self-grant rule).
-    risk_overrides = RiskOverrideStore(state_dir() / "risk_overrides.json").resolver()
+    # User-local risk overrides (relax a plugin / tighten anything) + OPE-136 trust
+    # rules (per-MCP-tool "don't ask", durable). One store, never written by persona
+    # loading (the no-self-grant rule). The same instance serves the read side
+    # (classify + the trusted branch) and the write side ("Always allow this tool"),
+    # so a rule minted mid-session quiets THIS session immediately and every later
+    # one via the file.
+    override_store = RiskOverrideStore(state_dir() / "risk_overrides.json")
     permissions = PermissionEngine(
         workspace_root=ws or (root_list[0].path if root_list else Path.cwd()),
         mode=mode,
@@ -455,7 +541,9 @@ def build_engine(
         auto_allow_tools=set(config.auto_allow),
         allowed_domains=list(config.allowed_domains),
         roots=root_list or None,
-        risk_overrides=risk_overrides,
+        risk_overrides=override_store.resolver(),
+        trust_overrides=override_store.trusted,
+        grant_trust=override_store.set_trust,
     )
     # The plan-mode exit door — mutually exclusive with the board's decomposition
     # gate, DERIVED from the team trait (owner call 2026-08-16): a lead never
@@ -470,9 +558,23 @@ def build_engine(
     # mode) and propose_team (staffing → pre-spawn on approval).
     if agent.team == "lead":
         from .teams.tools import propose_team_tool, propose_work_items_tool
+        from .tools.connreq import grant_connector_tool
 
         registry.register(propose_work_items_tool())
         registry.register(propose_team_tool())
+        # §11.6: a lead may ask the human to give one of its workers a connector, and a
+        # Manual lead answers its workers' parked calls (the call itself asks the human).
+        registry.register(grant_connector_tool())
+        if worker_decider is not None:
+            from .teams.tools import decide_worker_call_tool
+
+            registry.register(decide_worker_call_tool(worker_decider))
+    # §11.6: any connector-capable coworker may ask the human to connect a service it
+    # could use (bounded by its `connectors:` declaration — the consent ceiling).
+    if agent.connectors:
+        from .tools.connreq import request_connector_tool
+
+        registry.register(request_connector_tool())
 
     # Per-turn ephemeral context, appended to the latest user message since mid-thread system
     # messages aren't reliable across providers. Three producers: the plan-mode reminder (mode can
@@ -488,12 +590,14 @@ def build_engine(
     _engine_box: list = []
 
     def context_provider() -> str:
-        # Live clock, every turn (owner ruling 2026-08-20): the environment block's
-        # "Today's date" is a session-START snapshot — stale for long-lived/self-waking
-        # sessions — and carries no time of day, which absolute scheduling
-        # (sleep_until, scheduled tasks) needs to compute wake times.
-        now = datetime.now().astimezone()
-        parts = [f"Now: {now.strftime('%Y-%m-%d %H:%M')} ({now.tzname()})"]
+        # Nothing here may move on its own (OPE-192). The block is glued onto a message
+        # the provider has already cached, so a value that changes by itself — the live
+        # clock this block carried from 2026-08-20 to 2026-09-17 — rewrites that message
+        # on every turn and throws the whole cached conversation away. The time is a
+        # tool now (`current_time`, registered for every session) and a timer wake says
+        # when it fired; the folders, mode notices and skill menu below change only when
+        # the user changes something.
+        parts: list[str] = []
         if permissions.mode is Mode.PLAN:
             parts.append(_PLAN_MODE_CONTEXT)
         elif permissions.mode is Mode.DISCUSS:
@@ -529,6 +633,12 @@ def build_engine(
                 )
         return "\n\n".join(parts)
 
+    cap = (
+        tool_result_max_bytes
+        if tool_result_max_bytes is not None
+        else config.tool_result_max_bytes
+    )
+
     engine = TurnEngine(
         provider=provider,
         registry=registry,
@@ -536,6 +646,8 @@ def build_engine(
         model=model,
         instructions=instructions,
         approver=approver,
+        tool_result_max_bytes=cap,
+        tool_result_spill_dir=spill_dir,
         # Stop kills the in-flight foreground shell command, not just the loop.
         interrupt_hooks=[executor.interrupt_now] if executor is not None else None,
         max_iterations=(
@@ -549,9 +661,23 @@ def build_engine(
         plan_approver=plan_approver,
         question_asker=question_asker,
         tool_requester=tool_requester,
+        connector_requester=connector_requester,
         team_approver=team_approver,
         items_approver=items_approver,
     )
+    # OPE-186 change 3: a configured compaction cap makes the summariser fire earlier
+    # than the built-in 250,000-token cap. The window still comes from the model matrix.
+    # OPE-189: the summariser's own output ceiling rides the same settings dict; unset
+    # keys fall back to the engine's defaults, so setting either one alone is safe.
+    _compaction_overrides: dict[str, Any] = {}
+    if config.compaction_cap_tokens:
+        _compaction_overrides["cap_tokens"] = int(config.compaction_cap_tokens)
+    if config.compaction_summary_max_tokens:
+        _compaction_overrides["summary_max_tokens"] = int(
+            config.compaction_summary_max_tokens
+        )
+    if _compaction_overrides:
+        engine.compaction_settings = lambda: dict(_compaction_overrides)
     engine.executor = executor  # type: ignore[attr-defined]
     engine.todo = todo  # type: ignore[attr-defined]
     engine.agent_name = agent.name  # type: ignore[attr-defined]
