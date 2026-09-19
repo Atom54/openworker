@@ -82,7 +82,7 @@ main() {
     say ""
     say "Next:"
     say "  1. In the OpenWorker app: Settings > Machines > Add a machine, and copy the join link."
-    say "  2. Here:  openworker machine join <link>"
+    say "  2. Here:  openworker join <link>"
     say "  3. To keep it running in the background:  openworker machine service install"
 }
 

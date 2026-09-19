@@ -1,5 +1,6 @@
-"""The public CLI surface: `openworker machine …`, `version`, and help that lists them.
-Older top-level spellings stay working (enrolled boxes and their service units use them)."""
+"""The public CLI surface: `openworker join` and `openworker up` (the everyday pair),
+`openworker machine …` (status, keys, logs, service, leave), `version`, and help that lists
+them. There is one spelling for each command; typing one at the wrong level says where it is."""
 
 import pytest
 
@@ -7,11 +8,11 @@ from coworker import cli as ow_cli
 from coworker.remote import joiner
 
 
-def test_no_arguments_prints_help_that_lists_the_machine_commands(capsys):
+def test_no_arguments_prints_help_that_lists_every_public_command(capsys):
     ow_cli.main([])
     out = capsys.readouterr().out
     assert "usage: openworker <command>" in out
-    for verb in ("machine", "join", "up", "status", "keys", "service", "leave", "version"):
+    for verb in ("join <link>", "up", "machine", "status", "keys", "logs", "service", "leave", "version"):
         assert verb in out
     # Unlisted until tested as a product surface.
     for hidden in ("tui", "sessions", "inbox", "doctor"):
@@ -31,7 +32,7 @@ def test_version(flag, capsys):
     assert out.startswith("openworker ") and out.split()[1][0].isdigit()
 
 
-def test_machine_group_runs_the_headless_commands(tmp_path, monkeypatch, capsys):
+def test_machine_group_runs_the_management_commands(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path))
     with pytest.raises(SystemExit) as exc:
         ow_cli.main(["machine", "status"])
@@ -39,25 +40,63 @@ def test_machine_group_runs_the_headless_commands(tmp_path, monkeypatch, capsys)
     assert "not joined" in capsys.readouterr().out
 
 
-def test_machine_with_no_command_shows_its_help(capsys):
+def test_machine_with_no_command_shows_its_help_without_join_or_up(capsys):
     with pytest.raises(SystemExit) as exc:
         ow_cli.main(["machine"])
     assert exc.value.code == 0
-    assert "usage: openworker machine" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "usage: openworker machine" in out and "{status,logs,keys,leave,service}" in out
 
 
-def test_older_top_level_spelling_still_works(tmp_path, monkeypatch, capsys):
+def test_up_is_a_top_level_command(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path))
     with pytest.raises(SystemExit) as exc:
-        ow_cli.main(["status"])
-    assert exc.value.code == 0
-    assert "not joined" in capsys.readouterr().out
+        ow_cli.main(["up"])
+    assert exc.value.code == 2  # never joined
+    assert "openworker join <link>" in capsys.readouterr().err
 
 
-def test_keys_is_the_public_name_and_secrets_still_works(tmp_path, monkeypatch, capsys):
+def test_join_is_a_top_level_command_and_checks_its_link(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path))
+    with pytest.raises(SystemExit) as exc:
+        ow_cli.main(["join", "http://host:1/wrong/tok"])
+    assert exc.value.code == 2
+
+
+def test_join_with_a_bare_address_means_approve_a_code_there(tmp_path, monkeypatch):
+    """One verb for both ways in: a link enrolls directly; a controller's address starts the
+    approve-a-code flow (what used to be spelled `auth join`)."""
+    seen = {}
+    monkeypatch.setattr(joiner, "_cmd_auth_join", lambda state, url, name: seen.update(url=url, name=name) or 0)
+    assert joiner.cli(["join", "https://machines.example.com", "--name", "box"]) == 0
+    assert seen == {"url": "https://machines.example.com", "name": "box"}
+    assert joiner._is_controller_address("http://127.0.0.1:8765/")
+    assert not joiner._is_controller_address("http://127.0.0.1:8765/j/abc")
+    assert not joiner._is_controller_address("http://host:1/wrong/tok")
+
+
+@pytest.mark.parametrize(
+    "typed, now",
+    [
+        (["status"], "machine status"),
+        (["secrets", "list"], "machine keys"),
+        (["service", "install"], "machine service"),
+        (["machine", "up"], "up"),
+        (["machine", "join", "http://h/j/t"], "join"),
+        (["auth", "join", "http://h"], "join <address>"),
+    ],
+)
+def test_a_command_typed_at_the_wrong_level_says_where_it_lives(typed, now, capsys):
+    with pytest.raises(SystemExit) as exc:
+        ow_cli.main(typed)
+    assert exc.value.code == 2
+    assert f"is `openworker {now}`" in capsys.readouterr().err
+
+
+def test_keys_stores_a_key_and_never_prints_it(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path))
     assert joiner.cli(["keys", "set", "openai", "api_key=sk-local"]) == 0
-    assert joiner.cli(["secrets", "list"]) == 0
+    assert joiner.cli(["keys", "list"]) == 0
     out = capsys.readouterr().out
     assert "openai" in out and "sk-local" not in out
 
@@ -160,7 +199,7 @@ def test_macos_service_install_refuses_a_twin_on_the_same_state_dir(tmp_path, mo
 def test_service_needs_a_joined_machine_and_a_supported_platform(tmp_path, capsys):
     args = argparse.Namespace(service_command="install", force=False)
     assert joiner._cmd_service(tmp_path, args, platform="darwin", home=tmp_path) == 2
-    assert "machine join" in capsys.readouterr().err
+    assert "openworker join <link>" in capsys.readouterr().err
     assert joiner._cmd_service(tmp_path, args, platform="win32", home=tmp_path) == 2
     assert "systemd" in capsys.readouterr().err
 
@@ -184,7 +223,7 @@ def test_install_script_is_valid_posix_shell_and_runs_nothing_if_truncated():
             assert subprocess.run([exe, "-n", str(INSTALL_SH)]).returncode == 0
     # No sudo, and it points people at the public command spelling.
     assert "sudo" not in text.replace("(no sudo)", "")
-    assert "openworker machine join <link>" in text
+    assert "openworker join <link>" in text
 
 
 def test_install_script_refuses_an_unsupported_os(tmp_path):

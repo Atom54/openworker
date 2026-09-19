@@ -142,7 +142,7 @@ _ENGINE_LOCK = None
 def _warn_if_state_shared() -> None:
     """The desktop sidecar runs on a random port precisely so it can coexist with
     a hand-run `openworker-server` on the same state dir, so this entrypoint only
-    WARNS about a second engine (statelock.py). `openworker machine up` refuses outright;
+    WARNS about a second engine (statelock.py). `openworker up` refuses outright;
     set COWORKER_STATE_LOCK=strict to make this server refuse too."""
     global _ENGINE_LOCK
     from ..statelock import EngineBusy, acquire

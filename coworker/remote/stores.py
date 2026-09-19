@@ -100,7 +100,7 @@ class Ephemera(Protocol):
         leases have no TTL — a process death releases them with the process."""
         ...
 
-    # Device-authorization grants (`openworker auth join`): a box's pending
+    # Device-authorization grants (`openworker join <address>`): a box's pending
     # request to be approved. Keyed by device_code (secret, box-held); looked
     # up by user_code (short, human-typed) on the approval side.
     def put_grant(self, grant: dict[str, Any]) -> None: ...

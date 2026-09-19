@@ -81,7 +81,7 @@ supervisor to keep it up unattended.
 3. Copy the one-line command from the card and run it on the machine:
 
 ```bash
-openworker machine join http://127.0.0.1:8765/j/<token> --name=my-box
+openworker join http://127.0.0.1:8765/j/<token> --name=my-box
 ```
 
 The card flips to **“✓ my-box joined”** and shows the machine's key
@@ -139,7 +139,7 @@ To keep the machine serving across logouts and reboots, on the machine:
 openworker machine service install
 ```
 
-This writes and enables a systemd user unit running `openworker machine up`
+This writes and enables a systemd user unit running `openworker up`
 (auto-restart, 5s backoff). To also run without anyone logged in:
 
 ```bash

@@ -453,7 +453,7 @@ export function MachinesSection() {
 // The signed-in identity + org switcher moved to Settings ▸ Account
 // (UX-046 tail, 2026-08-30) — this page is the fleet list only.
 
-// Typed-code approval for `openworker machine auth join` (GitHub device-flow style).
+// Typed-code approval for `openworker join` (GitHub device-flow style).
 // The machine printed a code; the user types it here, checks the fingerprint
 // against what the machine printed, and decides. Approval mints the one join
 // token, bound to that machine's identity — a mistyped code shows a stranger's
@@ -561,7 +561,7 @@ function ApproveMachineCard({
               components={{
                 cmd: (
                   <span className="font-mono text-ink">
-                    {`openworker machine auth join <${t("machines.approve.this_url")}>`}
+                    {`openworker join <${t("machines.approve.this_url")}>`}
                   </span>
                 ),
               }}
@@ -690,7 +690,7 @@ function AddMachineCard({
       return "9787";
     }
   })();
-  const command = joinUrl ? `openworker machine join ${joinUrl} --name=my-box` : "…";
+  const command = joinUrl ? `openworker join ${joinUrl} --name=my-box` : "…";
 
   const copy = async () => {
     if (!joinUrl) return;

@@ -68,7 +68,7 @@ test("enrollment: arming shows the one-liner, a joining box flips the card", asy
 
   await page.getByText("Add a machine…").click();
   await expect(page.getByTestId("join-command")).toContainText(
-    "openworker machine join http://127.0.0.1:9787/j/e2e-token",
+    "openworker join http://127.0.0.1:9787/j/e2e-token",
   );
   await expect(page.getByText(/Waiting for the machine/)).toBeVisible();
   await expect(page.getByTestId("token-countdown")).toContainText("token expires in");

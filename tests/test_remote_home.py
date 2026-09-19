@@ -467,7 +467,7 @@ async def _device_approve_cycle(client, base: str, fingerprint: str, name: str =
 
 
 async def test_device_flow_mints_identity_bound_token(tmp_path):
-    # `openworker auth join`: the box asks, the user approves a NAMED identity,
+    # `openworker join <address>`: the box asks, the user approves a NAMED identity,
     # approval mints the one join token — bound so only that identity can use it.
     import websockets
 
@@ -1074,15 +1074,15 @@ def test_secrets_cli_set_and_list(tmp_path, capsys, monkeypatch):
     from coworker.remote import joiner
 
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "s-state"))
-    assert joiner.cli(["secrets", "set", "openai", "api_key=sk-local"]) == 0
+    assert joiner.cli(["keys", "set", "openai", "api_key=sk-local"]) == 0
     assert "stored profile 'openai'" in capsys.readouterr().out
-    assert joiner.cli(["secrets", "list"]) == 0
+    assert joiner.cli(["keys", "list"]) == 0
     assert "openai" in capsys.readouterr().out
     from coworker.secrets import SecretStore
 
     store = SecretStore(tmp_path / "s-state" / "secrets.json")
     assert store.get("openai") == {"api_key": "sk-local"}
-    assert joiner.cli(["secrets", "set", "bad", "no-equals"]) == 2
+    assert joiner.cli(["keys", "set", "bad", "no-equals"]) == 2
 
 
 # -- bridged session WebSocket (P1c) -------------------------------------------
@@ -1311,7 +1311,7 @@ def test_openworker_cli_routes_remote_verbs(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "route-state"))
     with pytest.raises(SystemExit) as exit_info:
-        ow_cli.main(["status"])
+        ow_cli.main(["machine", "status"])
     assert exit_info.value.code == 0
     assert "not joined" in capsys.readouterr().out
 

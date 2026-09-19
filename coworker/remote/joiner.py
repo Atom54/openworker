@@ -1,4 +1,4 @@
-"""The box side of remote homes: `openworker join / up / status / leave`.
+"""The box side of remote homes: `openworker join`, `openworker up`, `openworker machine …`.
 
 Joined mode runs the ENTIRE existing server — state dir, engines, the full
 ASGI app — with no listener at all. `joiner` dials the controller, proves its
@@ -547,21 +547,49 @@ def _lifespan(app):
 # -- CLI ----------------------------------------------------------------------
 
 
-def cli(argv: Optional[list[str]] = None, prog: str = "openworker machine") -> int:
+TOP_COMMANDS = ("join", "up")
+MACHINE_COMMANDS = ("status", "keys", "logs", "service", "leave")
+
+
+class _Only:
+    """Registers a subcommand only when the caller's view includes it; the rest get a
+    throwaway parser, so one definition serves `openworker`, `openworker machine` and tests."""
+
+    def __init__(self, sub, only):
+        self._sub, self._only = sub, only
+
+    def add_parser(self, name, **kw):
+        if self._only is None or name in self._only:
+            return self._sub.add_parser(name, **kw)
+        return argparse.ArgumentParser(add_help=False)
+
+
+def cli(
+    argv: Optional[list[str]] = None,
+    prog: str = "openworker",
+    only: Optional[tuple[str, ...]] = None,
+) -> int:
+    """`only` limits the subcommands offered: TOP_COMMANDS for `openworker join|up`,
+    MACHINE_COMMANDS for `openworker machine …`; None offers all of them."""
     from ..secrets import state_dir
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    # `keys` is the public name; `secrets` is the older spelling and keeps working.
-    if argv and argv[0] == "secrets":
-        argv[0] = "keys"
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Run this OpenWorker headless, joined to a controller (the desktop app or OpenWorker Cloud).",
+        description=(
+            "Manage this machine."
+            if only == MACHINE_COMMANDS
+            else "Run this OpenWorker headless, joined to a controller (the desktop app or OpenWorker Cloud)."
+        ),
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = _Only(parser.add_subparsers(dest="command", required=True), only)
 
     p_join = sub.add_parser("join", help="enroll with a controller and start serving")
-    p_join.add_argument("url", help="join URL from the controller (…/j/<token>)")
+    p_join.add_argument(
+        "url",
+        help="the join link from the app (…/j/<token>), or the controller's address to "
+        "enroll by approving a code there",
+    )
     p_join.add_argument("--name", default=None, help="machine name (default: hostname)")
 
     # `auth join`: no token in hand — ask the controller for approval (device
@@ -629,7 +657,15 @@ def cli(argv: Optional[list[str]] = None, prog: str = "openworker machine") -> i
     return 2
 
 
+def _is_controller_address(url: str) -> bool:
+    """A bare address (no path): enroll by approving a code there, not with a link."""
+    parts = urlsplit(url if "://" in url else f"//{url}")
+    return bool(parts.netloc) and parts.path in ("", "/") and not parts.query
+
+
 def _cmd_join(state: Path, url: str, name: Optional[str]) -> int:
+    if _is_controller_address(url):
+        return _cmd_auth_join(state, url, name)
     try:
         controller, token = parse_join_url(url)
     except ValueError as exc:
@@ -713,7 +749,7 @@ def _cmd_up(state: Path) -> int:
     cfg = load_remote_config(state)
     if cfg is None:
         print(
-            "error: this machine has not joined a controller (run `openworker machine join <link>`)",
+            "error: this machine has not joined a controller (run `openworker join <link>`)",
             file=sys.stderr,
         )
         return 2
@@ -843,7 +879,7 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if platform != "linux":
         print(
             "error: `service` supports Linux (systemd) and macOS (launchd). Here, run "
-            "`openworker machine up` in a terminal that stays open.",
+            "`openworker up` in a terminal that stays open.",
             file=sys.stderr,
         )
         return 2
@@ -870,7 +906,7 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     if cfg is None:
         print(
             "error: this machine has not joined a controller yet — run "
-            "`openworker machine join <link>` first, then install the service.",
+            "`openworker join <link>` first, then install the service.",
             file=sys.stderr,
         )
         return 2
@@ -1012,7 +1048,7 @@ def _cmd_service_macos(state: Path, args, home: Path) -> int:
     if cfg is None:
         print(
             "error: this machine has not joined a controller yet — run "
-            "`openworker machine join <link>` first, then install the service.",
+            "`openworker join <link>` first, then install the service.",
             file=sys.stderr,
         )
         return 2
@@ -1090,7 +1126,7 @@ def _cmd_logs(state: Path, args, platform: Optional[str] = None) -> int:
     if platform == "darwin" and not service_log_path(state).exists():
         print(
             "no service log yet. Logs are kept when this machine runs as a service "
-            "(`openworker machine service install`); in a terminal, `up` prints them there.",
+            "(`openworker machine service install`); in a terminal, `openworker up` prints them there.",
             file=sys.stderr,
         )
         return 1

@@ -3208,7 +3208,7 @@ export async function getMe(): Promise<MeInfo> {
   return r.json();
 }
 
-// -- device-flow approval (`openworker machine auth join` — typed-code, GitHub-style) --
+// -- device-flow approval (`openworker join` — typed-code, GitHub-style) --
 
 export interface DeviceRequestDetail {
   user_code: string;
