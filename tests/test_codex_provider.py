@@ -407,9 +407,12 @@ def test_descriptor_configured_means_tokens_present():
 
 def test_matrix_curates_subscription_models():
     from coworker.providers.capabilities import capabilities_for
-    from coworker.providers.matrix import models_for_provider
+    from coworker.providers.matrix import model_context_windows, models_for_provider
 
     assert models_for_provider("openai-codex") == [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
@@ -418,6 +421,12 @@ def test_matrix_curates_subscription_models():
         "gpt-5.1-codex",
         "gpt-5.1-codex-mini",
     ]
+    for tier in ("astra", "sol", "luna"):
+        model = f"openai-codex:gpt-6-{tier}"
+        caps = capabilities_for(model)
+        assert caps.tools and caps.vision and caps.streaming and caps.parallel_tool_calls
+        assert not caps.pdf  # Subscription PDF support remains unverified.
+        assert model_context_windows()[model] == 1_050_000
     caps = capabilities_for("openai-codex:gpt-5.6-sol")
     assert caps.tools and caps.vision and caps.streaming
 
@@ -473,7 +482,7 @@ def test_providers_list_shows_oauth_state(tmp_path):
     row = rows["openai-codex"]
     assert row["auth"] == "oauth"
     assert row["signed_in"] is False and row["configured"] is False
-    assert "gpt-5.6-sol" in row["suggested_models"]
+    assert {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"} <= set(row["suggested_models"])
 
     manager.secrets.put(
         "provider:openai-codex",

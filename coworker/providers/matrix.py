@@ -69,6 +69,29 @@ MATRIX: dict[str, ModelEntry] = {
     # ChatGPT-subscription catalog (the `openai-codex` OAuth provider). Curated to the
     # ids the subscription backend actually serves; vision per the vendor's model docs,
     # PDF unverified over this backend → local fallback via pdf_support.py.
+    # GPT-6 ids: https://learn.chatgpt.com/docs/models (2026-09-25).
+    # Windows: https://developers.openai.com/api/docs/models/compare; access varies by plan.
+    "openai-codex:gpt-6-astra": ModelEntry(
+        "GPT-6 Astra · ChatGPT plan",
+        ModelCapabilities(
+            tools=True, vision=True, parallel_tool_calls=True, streaming=True
+        ),
+        1_050_000,
+    ),
+    "openai-codex:gpt-6-sol": ModelEntry(
+        "GPT-6 Sol · ChatGPT plan",
+        ModelCapabilities(
+            tools=True, vision=True, parallel_tool_calls=True, streaming=True
+        ),
+        1_050_000,
+    ),
+    "openai-codex:gpt-6-luna": ModelEntry(
+        "GPT-6 Luna · ChatGPT plan",
+        ModelCapabilities(
+            tools=True, vision=True, parallel_tool_calls=True, streaming=True
+        ),
+        1_050_000,
+    ),
     # 5.6 tiers (Sol flagship / Terra balanced / Luna fast) serve over the subscription
     # backend by plan — Sol is rate-limited on Plus, full on Pro.
     "openai-codex:gpt-5.6-sol": ModelEntry(
