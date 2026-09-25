@@ -388,7 +388,7 @@ function Buttons({
           {t("approval.btn.always_search")}
         </button>
       )}
-      {!autoApprove && item.name === "run_shell" && (
+      {!autoApprove && !offerStanding && item.name === "run_shell" && (
         <button className="btn" onClick={() => onApprove("always_command")}>
           {t("approval.btn.always_command")}
         </button>

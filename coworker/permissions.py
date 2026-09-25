@@ -266,9 +266,16 @@ def standing_rule_candidate(
     """The target value iff this call is eligible for a task-scoped standing rule
     (UX-DECISIONS §25): external-risk only (never exec/write-local — shell asks forever),
     the tool must declare a target argument, and the call must actually name a target.
-    Returns None otherwise — ineligible calls keep parking approvals as today."""
+    Returns None otherwise — ineligible calls keep parking approvals as today.
+
+    Fork: run_shell is eligible too, the target being the EXACT command text, so a
+    scheduled run's script is approved once ("Allow every time") and never again. Only a
+    human click mints it (grant_entries still refuses shell at create time); any change
+    to the command text asks again. The self-protection floor still runs before it."""
     from .connectors.tool_defs import standing_target_for
 
+    if tool_name == "run_shell":
+        return str((arguments or {}).get("command") or "").strip() or None
     if classify(tool_name, metadata, overrides) is not RiskClass.EXTERNAL:
         return None
     return standing_target_for(tool_name, arguments or {})
