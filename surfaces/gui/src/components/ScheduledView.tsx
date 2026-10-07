@@ -20,9 +20,6 @@ import { ScheduleFields, looksLikeCron } from "./Recurrence";
 // Shared utility strings (the §28 page shell — mirrors IntegrationsView's constants).
 const CARD = "rounded-xl2 border border-line bg-panel";
 
-// Reasoning levels the backend accepts (SessionManager.THINKING_LEVELS).
-const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh"];
-
 /** The models list + labels the run-settings selects need, loaded once per view. */
 export interface ModelChoices {
   models: string[];
@@ -30,35 +27,19 @@ export interface ModelChoices {
   appDefault: string;
 }
 
-/** Which models take a per-run reasoning level: the Responses API wires — native OpenAI
- *  (bare ids) and Azure AI Foundry. Anthropic configures thinking on the provider and the
- *  Chat Completions vendors reject the parameter, so the control is disabled for them
- *  rather than silently ignored. The provider router enforces this too (`_supported`);
- *  this is only what the form shows. */
-function takesThinkingLevel(model: string): boolean {
-  if (!model) return false;
-  return !model.includes(":") || model.startsWith("azure:");
-}
-
-/** Model + reasoning-level pickers, shared by the create form and the detail editor so
- *  the two can't drift. `model: ""` / `thinking: ""` mean "follow the app default". */
+/** Model picker, shared by the create form and the detail editor so the two can't drift.
+ *  `model: ""` means "follow the app default". */
 function RunSettings({
   choices,
   model,
-  thinking,
   onModel,
-  onThinking,
 }: {
   choices: ModelChoices | null;
   model: string;
-  thinking: string;
   onModel: (v: string) => void;
-  onThinking: (v: string) => void;
 }) {
   if (!choices) return null;
   const label = (m: string) => choices.labels[m] || m;
-  const effective = model || choices.appDefault;
-  const openai = takesThinkingLevel(effective);
   return (
     <div className="tmpl-sched">
       <label className="tmpl-field">
@@ -75,28 +56,6 @@ function RunSettings({
           {choices.models.map((m) => (
             <option key={m} value={m}>
               {label(m)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="tmpl-field">
-        <span>Thinking</span>
-        <select
-          className="tmpl-input tmpl-select"
-          value={openai ? thinking : ""}
-          disabled={!openai}
-          data-testid="automation-thinking"
-          title={
-            openai
-              ? "How hard the model reasons on each run."
-              : `${label(effective)} keeps its own thinking setting — only OpenAI and Azure models take a level here.`
-          }
-          onChange={(e) => onThinking(e.target.value)}
-        >
-          <option value="">Model default</option>
-          {THINKING_LEVELS.map((lvl) => (
-            <option key={lvl} value={lvl}>
-              {lvl[0].toUpperCase() + lvl.slice(1)}
             </option>
           ))}
         </select>
@@ -174,7 +133,6 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
     instructions: string;
     cron?: string;
     model?: string;
-    thinking?: string;
     permissions?: { tool: string; target: string; access: "read" | "write" }[];
   }) => {
     setBusy(payload.title);
@@ -297,7 +255,6 @@ function NewAutomationForm({
     instructions: string;
     cron?: string;
     model?: string;
-    thinking?: string;
   }) => void;
   choices: ModelChoices | null;
 }) {
@@ -306,7 +263,6 @@ function NewAutomationForm({
   const [instructions, setInstructions] = useState("");
   const [cron, setCron] = useState("0 9 * * *");
   const [model, setModel] = useState("");
-  const [thinking, setThinking] = useState("");
 
   const valid = title.trim() && instructions.trim() && looksLikeCron(cron);
 
@@ -331,9 +287,7 @@ function NewAutomationForm({
       <RunSettings
         choices={choices}
         model={model}
-        thinking={thinking}
         onModel={setModel}
-        onThinking={setThinking}
       />
       <div className="tmpl-form-actions">
         <button
@@ -345,7 +299,6 @@ function NewAutomationForm({
               instructions: instructions.trim(),
               cron,
               model,
-              thinking,
             })
           }
         >
@@ -383,7 +336,6 @@ function TaskDetail({
   const [instructions, setInstructions] = useState("");
   const [cron, setCron] = useState("0 9 * * *");
   const [model, setModel] = useState("");
-  const [thinking, setThinking] = useState("");
   const [saving, setSaving] = useState(false);
   // The server has the last word on a cron (croniter parses what the shape check can't).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -427,7 +379,6 @@ function TaskDetail({
     setTitle(task.title);
     setInstructions(task.instructions);
     setModel(task.model || "");
-    setThinking(task.thinking || "");
     setSaveError(null);
     setEditing(true);
   };
@@ -440,7 +391,6 @@ function TaskDetail({
         instructions: instructions.trim(),
         cron,
         model,
-        thinking,
       });
       if (res && res.ok === false) {
         // A rejected cron must not close the editor — the typed schedule would be lost.
@@ -521,9 +471,7 @@ function TaskDetail({
             <RunSettings
               choices={choices}
               model={model}
-              thinking={thinking}
               onModel={setModel}
-              onThinking={setThinking}
             />
           </>
         ) : (
@@ -541,7 +489,6 @@ function TaskDetail({
             {task.model && (
               <> · {choices?.labels[task.model] || task.model}</>
             )}
-            {task.thinking && <> · {tt("automations.thinking_suffix", { level: task.thinking })}</>}
             <div className="mt-2">
               <label className="switch">
                 <input

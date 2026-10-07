@@ -639,7 +639,6 @@
     "tmpl_cleanup_blurb": "按文件类型将最近的下载内容整理到规整的文件夹中。",
     "file_count_other": "{{count}} 个文件",
     "run_count_other": "{{count}} 次运行",
-    "thinking_suffix": "{{level}} thinking",
     "notify_on": "Notifies when it finishes",
     "notify_off": "Runs silently"
   },

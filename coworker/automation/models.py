@@ -169,10 +169,6 @@ class ScheduledTask:
     id: str = field(default_factory=lambda: "task-" + uuid.uuid4().hex[:10])
     task_session_id: str = ""  # the task's OWN thread (set to f"__task__{id}")
     model: Optional[str] = None
-    # Reasoning level for this automation's runs (None = the model's own default). It rides
-    # to the session the run opens, so a follow-up in that thread keeps it. Wires that don't
-    # take `reasoning_effort` have it dropped by the provider router (`_supported`).
-    thinking: Optional[str] = None
     notify_on_completion: bool = True
     notify_target: Optional[str] = None  # extra messaging target ("telegram:123")
     always_allowed_tools: list[str] = field(default_factory=list)
@@ -201,6 +197,9 @@ class ScheduledTask:
     @classmethod
     def from_dict(cls, d: dict) -> "ScheduledTask":
         d = dict(d)
+        # Automations saved by the fork's old per-automation reasoning level carry this key;
+        # upstream's per-model settings replaced it.
+        d.pop("thinking", None)
         d["schedule"] = Schedule.from_dict(d.get("schedule") or {})
         return cls(**d)
 
@@ -248,7 +247,6 @@ class ScheduledTask:
             "agent": self.agent,
             # None = "use the app default" — the UI shows that as the placeholder choice.
             "model": self.model,
-            "thinking": self.thinking,
             "enabled": self.enabled,
             "next_run": self.next_run,
             "last_run": self.last_run,

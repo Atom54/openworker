@@ -841,14 +841,12 @@ class SessionManager:
         if record:
             ws = record.workspace or None
             model, mode, messages = record.model, Mode(record.mode), record.messages
-            thinking = record.thinking
             mode = self.permitted_mode(mode)
         else:
             ws = self.resolve_workspace(workspace)
             # A coworker with a `models:` list starts on the first entry this machine
             # can run (§4); without one, the machine default as before.
             model, mode, messages = self.resolve_persona_model(agent_name), self.mode, None
-            thinking = None
 
         if not ws or not Path(ws).is_dir():
             # Sessions without a folder start "orphan": auto-provision a per-conversation
@@ -908,12 +906,8 @@ class SessionManager:
             mode=mode,
             provider=self.provider,
             # The model's saved settings (or its maker's recommendation): longest reply,
-            # sampling, thinking. Read at build time. An automation run's session keeps the
-            # automation's reasoning level across follow-ups, on top.
-            model_settings={
-                **_model_config.model_settings_for(model),
-                **self._thinking_settings(thinking),
-            },
+            # sampling, thinking. Read at build time.
+            model_settings=_model_config.model_settings_for(model),
             # Memory off (§4.3) = stop LEARNING, not amnesia: saved facts still inject
             # and stay usable, only the write tools go. Read at build time; running
             # sessions finish under the mode they started with.
@@ -6439,13 +6433,9 @@ class SessionManager:
         for tool in task.name_allowed_tools():
             engine.permissions.allow_tool_for_session(tool)
 
-    # Reasoning levels an automation may pick. Model ids stay free-form (custom ids are a
-    # first-class case here — see add_model), but an unknown thinking level would only
-    # surface as a provider 400 mid-run, so it's rejected at the door.
-    THINKING_LEVELS = ("none", "low", "medium", "high", "xhigh")
-
     def _read_run_overrides(self, src: dict[str, Any]) -> dict[str, Any]:
-        """Validate the optional model/thinking overrides shared by create + update.
+        """Read the optional model override shared by create + update (model ids stay
+        free-form: custom ids are a first-class case here — see add_model).
 
         Returns {"error": …} on a bad value, otherwise the fields actually present, with ""
         meaning "clear the override, fall back to the app default".
@@ -6453,22 +6443,7 @@ class SessionManager:
         out: dict[str, Any] = {}
         if "model" in src:
             out["model"] = (str(src.get("model") or "").strip()) or None
-        if "thinking" in src:
-            level = (str(src.get("thinking") or "").strip().lower()) or None
-            if level is not None and level not in self.THINKING_LEVELS:
-                return {
-                    "error": "thinking must be one of: " + ", ".join(self.THINKING_LEVELS)
-                }
-            out["thinking"] = level
         return out
-
-    @staticmethod
-    def _thinking_settings(thinking: Optional[str]) -> dict[str, Any]:
-        """Per-call settings carrying a reasoning level, or {} when none is set. Wires that
-        can't take `reasoning_effort` have it dropped by the router (`_supported`), which is
-        the only place that knows the target client — including after a mid-session switch.
-        """
-        return {"reasoning_effort": thinking} if thinking else {}
 
     def _build_task_engine(self, task, *, session_id: str) -> TurnEngine:
         ag = get_agent(task.agent)
@@ -6479,10 +6454,7 @@ class SessionManager:
             workspace=task.workspace,
             model=task_model,
             mode=Mode.INTERACTIVE,
-            model_settings={
-                **_model_config.model_settings_for(task_model),
-                **self._thinking_settings(task.thinking),
-            },
+            model_settings=_model_config.model_settings_for(task_model),
             approver=self._scheduled_approver(task, session_id),
             provider=self.provider,
             memory_store=self.memory_store,
@@ -7498,7 +7470,6 @@ class SessionManager:
             origin_surface="cowork",
             agent="cowork",
             model=overrides.get("model"),
-            thinking=overrides.get("thinking"),
             # Human-driven path (GUI form / onboarding recipes): the creating surface
             # rendered the grants, the submit IS the consent. Same validation as the
             # agent tool — only target-bound write grants survive.
@@ -7533,8 +7504,6 @@ class SessionManager:
         # silently clear the other.
         if "model" in overrides:
             task.model = overrides["model"]
-        if "thinking" in overrides:
-            task.thinking = overrides["thinking"]
         # Per-automation silence: an automation that reliably works doesn't need to announce
         # itself. The field always existed and was honoured; nothing could ever set it.
         if "notify_on_completion" in changes:
@@ -7568,7 +7537,7 @@ class SessionManager:
         )  # status "running", session_id auto
         self.task_store.add_run(run)
         # Seed the session record BEFORE the GUI opens it: a manual run must use the
-        # automation's own model and reasoning level, not the app default. get_engine reads
+        # automation's own model, not the app default. get_engine reads
         # this record, and its `ready` event is what the composer adopts — without the seed
         # the composer would push the default model back over the automation's choice
         # (owner-hit 2026-07-28: the run's chat showed a different model).
@@ -7578,7 +7547,6 @@ class SessionManager:
                 session_id=run.session_id,
                 workspace=task.workspace,
                 model=model,
-                thinking=task.thinking,
                 mode=self.mode.value,
                 messages=[],
                 agent=task.agent,
@@ -7590,9 +7558,8 @@ class SessionManager:
             "session_id": run.session_id,
             "workspace": task.workspace,
             "agent": task.agent,
-            # The GUI selects these up front so the composer never sends the default back.
+            # The GUI selects it up front so the composer never sends the default back.
             "model": model,
-            "thinking": task.thinking,
             # Same execute-now framing as the headless path — manual runs ride a normal live
             # session whose engine DOES have scheduling tools, so be explicit.
             "prompt": (
@@ -7637,9 +7604,6 @@ class SessionManager:
                 session_id=session_id,
                 workspace=workspace,
                 model=engine.model,
-                # Survives the engine: a reopened automation-run thread must reason the
-                # same way, and switching the model mid-session doesn't clear the level.
-                thinking=(engine.model_settings or {}).get("reasoning_effort"),
                 mode=engine.permissions.mode.value,
                 messages=engine.messages,
                 title=title_from(engine.messages),

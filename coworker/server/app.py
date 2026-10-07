@@ -3131,9 +3131,6 @@ def create_app(manager: SessionManager) -> FastAPI:
                     "running": manager.is_running(session_id),
                     "agent": getattr(engine, "agent_name", "code"),
                     "model": engine.model,
-                    # Reasoning level carried by this session (automation runs seed it) —
-                    # a fixed fact the header states; null for ordinary sessions.
-                    "thinking": (engine.model_settings or {}).get("reasoning_effort"),
                     "mode": engine.permissions.mode.value,
                     # OPE-218: the header chip says which walls this session runs behind.
                     "sandbox": _session_sandbox(engine),

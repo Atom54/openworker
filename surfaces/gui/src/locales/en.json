@@ -649,7 +649,6 @@
     "file_count_other": "{{count}} files",
     "run_count_one": "{{count}} run",
     "run_count_other": "{{count}} runs",
-    "thinking_suffix": "{{level}} thinking",
     "notify_on": "Notifies when it finishes",
     "notify_off": "Runs silently"
   },

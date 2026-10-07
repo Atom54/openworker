@@ -85,97 +85,58 @@ def _base(**extra) -> dict:
     }
 
 
-def test_create_automation_stores_model_and_thinking(tmp_path, monkeypatch):
+def test_create_automation_stores_model(tmp_path, monkeypatch):
     manager = _manager(tmp_path, monkeypatch)
-    out = manager.create_automation(_base(model="gpt-5.6-terra", thinking="High"))
+    out = manager.create_automation(_base(model="gpt-5.6-terra"))
     assert out["ok"] is True
-    saved = manager.task_store.get(out["task"]["id"])
-    assert saved.model == "gpt-5.6-terra"
-    assert saved.thinking == "high"  # normalized
-    # the UI reads both back off the public shape
+    assert manager.task_store.get(out["task"]["id"]).model == "gpt-5.6-terra"
+    # the UI reads it back off the public shape
     assert out["task"]["model"] == "gpt-5.6-terra"
-    assert out["task"]["thinking"] == "high"
 
 
 def test_create_automation_defaults_to_no_override(tmp_path, monkeypatch):
     manager = _manager(tmp_path, monkeypatch)
-    task = manager.create_automation(_base())["task"]
-    assert task["model"] is None and task["thinking"] is None
+    assert manager.create_automation(_base())["task"]["model"] is None
 
 
-def test_create_automation_rejects_unknown_thinking(tmp_path, monkeypatch):
-    """An unsupported level would only surface as a provider 400 mid-run."""
+def test_update_automation_clears_the_model_override(tmp_path, monkeypatch):
     manager = _manager(tmp_path, monkeypatch)
-    out = manager.create_automation(_base(thinking="ludicrous"))
-    assert out["ok"] is False and "thinking" in out["error"]
-    assert manager.task_store.list() == []
-
-
-def test_update_automation_changes_one_field_at_a_time(tmp_path, monkeypatch):
-    manager = _manager(tmp_path, monkeypatch)
-    task_id = manager.create_automation(_base(model="gpt-5.6-sol", thinking="low"))[
-        "task"
-    ]["id"]
-
-    manager.update_automation(task_id, {"thinking": "high"})
-    saved = manager.task_store.get(task_id)
-    assert saved.thinking == "high" and saved.model == "gpt-5.6-sol"  # model untouched
-
+    task_id = manager.create_automation(_base(model="gpt-5.6-sol"))["task"]["id"]
+    manager.update_automation(task_id, {"title": "Renamed"})
+    assert manager.task_store.get(task_id).model == "gpt-5.6-sol"  # untouched
     # "" clears an override back to the app default
     manager.update_automation(task_id, {"model": ""})
-    saved = manager.task_store.get(task_id)
-    assert saved.model is None and saved.thinking == "high"
-
-    assert manager.update_automation(task_id, {"thinking": "nope"})["ok"] is False
-    assert manager.task_store.get(task_id).thinking == "high"  # unchanged
+    assert manager.task_store.get(task_id).model is None
 
 
-def test_manual_run_seeds_its_session_with_the_automation_settings(tmp_path, monkeypatch):
+def test_automation_saved_with_a_thinking_level_still_loads():
+    """The fork's old per-automation level was dropped for upstream's per-model settings;
+    tasks saved with it must not crash the store."""
+    from coworker.automation.models import Schedule, ScheduledTask
+
+    task = ScheduledTask(title="t", instructions="i", schedule=Schedule.from_dict({}), workspace="")
+    loaded = ScheduledTask.from_dict({**task.to_dict(), "thinking": "high"})
+    assert loaded.id == task.id and not hasattr(loaded, "thinking")
+
+
+def test_manual_run_seeds_its_session_with_the_automation_model(tmp_path, monkeypatch):
     """The GUI opens a manual run as a normal session, and the composer pushes its own model
-    with every turn — so the session record must already carry the automation's model and
-    level, or the run silently executes on the app default (owner-hit 2026-07-28)."""
+    with every turn — so the session record must already carry the automation's model, or
+    the run silently executes on the app default (owner-hit 2026-07-28)."""
     manager = _manager(tmp_path, monkeypatch)
     manager.model = "app-default-model"
-    task_id = manager.create_automation(
-        _base(model="gpt-5.6-terra", thinking="high")
-    )["task"]["id"]
+    task_id = manager.create_automation(_base(model="gpt-5.6-terra"))["task"]["id"]
 
     run = manager.prepare_manual_run(task_id)
     assert run["ok"] is True
-    # returned to the GUI so the composer adopts them before the first turn
-    assert run["model"] == "gpt-5.6-terra" and run["thinking"] == "high"
-
+    # returned to the GUI so the composer adopts it before the first turn
+    assert run["model"] == "gpt-5.6-terra"
     record = manager.session_store.load(run["session_id"])
-    assert record is not None
-    assert record.model == "gpt-5.6-terra" and record.thinking == "high"
+    assert record is not None and record.model == "gpt-5.6-terra"
 
 
 def test_manual_run_without_overrides_uses_the_app_default(tmp_path, monkeypatch):
     manager = _manager(tmp_path, monkeypatch)
     manager.model = "app-default-model"
     task_id = manager.create_automation(_base())["task"]["id"]
-
-    run = manager.prepare_manual_run(task_id)
-    assert run["model"] == "app-default-model" and run["thinking"] is None
-    assert manager.session_store.load(run["session_id"]).thinking is None
-
-
-def test_session_engine_carries_the_level_across_follow_ups(tmp_path, monkeypatch):
-    """Reopening an automation's run thread must keep reasoning the same way — the level
-    lives on the session record, not just on the run's first engine."""
-    manager = _manager(tmp_path, monkeypatch)
-    task_id = manager.create_automation(
-        _base(model="gpt-5.6-terra", thinking="low")
-    )["task"]["id"]
-    session_id = manager.prepare_manual_run(task_id)["session_id"]
-
-    engine = manager.get_engine(session_id, agent="cowork")
-    assert engine is not None
-    assert engine.model == "gpt-5.6-terra"
-    assert engine.model_settings.get("reasoning_effort") == "low"
-
-    # and it survives a save/rebuild cycle (the engine cache dropped between turns)
-    manager.save(session_id, engine)
-    manager._engines.pop(session_id, None)
-    rebuilt = manager.get_engine(session_id, agent="cowork")
-    assert rebuilt.model_settings.get("reasoning_effort") == "low"
+    assert manager.prepare_manual_run(task_id)["model"] == "app-default-model"

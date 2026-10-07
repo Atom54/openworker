@@ -243,10 +243,6 @@ export function App() {
     useState<WorkspaceCommandTrust | null>(null);
   const [agent, setAgent] = useState("cowork");
   const [model, setModel] = useState("gpt-5.6-sol");
-  // Reasoning level this session runs at (automation runs seed it; null = the
-  // model's own default). A stated fact, not a control — it is set from the
-  // automation, never from the composer.
-  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   // Per-model settings the user saved (UX-055): the picker shows context and thinking.
@@ -920,7 +916,6 @@ export function App() {
           setSessionRefused(false);
           setConnected(true);
           if (d.model) setModel(d.model);
-          setThinkingLevel(d.thinking ?? null);
           if (d.mode) setMode(d.mode === "bypass-approvals" ? "auto" : d.mode);
           if (d.command_trust?.required) setWorkspaceTrustRequest(d.command_trust);
           // Cowork: adopt the server-provisioned scratch dir (only when we don't already have one).
@@ -1892,9 +1887,8 @@ export function App() {
     if (!r || !r.ok) return;
     // Adopt the automation's model up front: the composer sends its selection with every
     // turn, so leaving the default here would override the automation's choice on the very
-    // first message (owner-hit 2026-07-28). `ready` confirms it, and the level with it.
+    // first message (owner-hit 2026-07-28). `ready` confirms it.
     if (r.model) setModel(r.model);
-    setThinkingLevel(r.thinking ?? null);
     pendingPromptRef.current = { text: r.prompt };
     activeRunRef.current = { taskId, runId: r.run_id, sessionId: r.session_id };
     openRunSession(r.session_id, r.workspace, r.agent, { id: taskId, title: title || "" });
@@ -1926,7 +1920,6 @@ export function App() {
   // (it was dropped 2026-07-22 while personas were hidden). For temporary folders the raw
   // path never shows — "Temporary folder" + the Save as project… affordance instead.
   const subtitleParts = [fullPersonaName(personaOf(agent)?.name, agent), modelDisplay];
-  if (thinkingLevel) subtitleParts.push(`${thinkingLevel} thinking`);
   if (isProjectScoped(personaOf(agent)) && workspace)
     subtitleParts.push(tempWorkspace ? t("root.temporary_space") : baseName(workspace));
   const activeInfo = sessions.find((s) => s.session_id === sessionId);
