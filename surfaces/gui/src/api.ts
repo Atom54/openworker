@@ -2803,6 +2803,8 @@ export interface Automation {
   last_status: string | null;
   run_count: number;
   notify_on_completion: boolean;
+  // Runs go through without asking for approval (the hard floors still hold).
+  bypass_approvals: boolean;
   // UX-023 sidebar badges: runs started since the user last opened this automation's
   // detail; `unseen_failed` = the newest unseen run errored (danger tint).
   unseen_runs?: number;

@@ -427,7 +427,7 @@ function Buttons({
           {t("approval.btn.always_site", { host: item.siteWall })}
         </button>
       )}
-      {!autoApprove && !offerStanding && item.name === "run_shell" && (
+      {!autoApprove && item.name === "run_shell" && (
         <button className="btn" onClick={() => onApprove("always_command")}>
           {t("approval.btn.always_command")}
         </button>

@@ -6450,7 +6450,7 @@ class SessionManager:
             agent=ag,
             workspace=task.workspace,
             model=task_model,
-            mode=Mode.INTERACTIVE,
+            mode=Mode.BYPASS_APPROVALS if task.bypass_approvals else Mode.INTERACTIVE,
             model_settings=_model_config.model_settings_for(task_model),
             approver=self._scheduled_approver(task, session_id),
             provider=self.provider,
@@ -7505,6 +7505,8 @@ class SessionManager:
         # itself. The field always existed and was honoured; nothing could ever set it.
         if "notify_on_completion" in changes:
             task.notify_on_completion = bool(changes["notify_on_completion"])
+        if "bypass_approvals" in changes:
+            task.bypass_approvals = bool(changes["bypass_approvals"])
         if changes.get("revoke"):
             # Revocation from the task detail page ("Allowed without asking … · Revoke").
             # Human-only, like minting; the agent-facing update tool has no such field.
@@ -7544,7 +7546,7 @@ class SessionManager:
                 session_id=run.session_id,
                 workspace=task.workspace,
                 model=model,
-                mode=self.mode.value,
+                mode=(Mode.BYPASS_APPROVALS if task.bypass_approvals else self.mode).value,
                 messages=[],
                 agent=task.agent,
             )

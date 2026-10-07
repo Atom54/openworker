@@ -640,7 +640,9 @@
     "file_count_other": "{{count}} 个文件",
     "run_count_other": "{{count}} 次运行",
     "notify_on": "Notifies when it finishes",
-    "notify_off": "Runs silently"
+    "notify_off": "Runs silently",
+    "bypass_on": "Bypass approvals: runs without asking",
+    "bypass_off": "Asks before risky actions"
   },
   "approval": {
     "escalation_reviewer_unsure": "自动批准需要您的判断：",

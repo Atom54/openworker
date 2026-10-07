@@ -413,6 +413,10 @@ function TaskDetail({
     await updateAutomation(id, { notify_on_completion: !task.notify_on_completion });
     refresh();
   };
+  const toggleBypass = async () => {
+    await updateAutomation(id, { bypass_approvals: !task.bypass_approvals });
+    refresh();
+  };
   const remove = async () => {
     await deleteAutomation(id);
     announceAutomationsChanged(); // the sidebar band must not wait out its poll
@@ -502,6 +506,20 @@ function TaskDetail({
               {task.notify_on_completion !== false
                 ? tt("automations.notify_on")
                 : tt("automations.notify_off")}
+            </div>
+            <div className="mt-2">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  data-testid="bypass-approvals"
+                  checked={task.bypass_approvals !== false}
+                  onChange={toggleBypass}
+                />
+                <span className="slider" />
+              </label>{" "}
+              {task.bypass_approvals !== false
+                ? tt("automations.bypass_on")
+                : tt("automations.bypass_off")}
             </div>
           </div>
         )}

@@ -170,6 +170,10 @@ class ScheduledTask:
     task_session_id: str = ""  # the task's OWN thread (set to f"__task__{id}")
     model: Optional[str] = None
     notify_on_completion: bool = True
+    # Runs go through without asking (Mode.BYPASS_APPROVALS; the hard floors still hold).
+    # On by default, existing automations included — the owner's call: an unattended run
+    # parking every new command in the Inbox defeats the point of scheduling it.
+    bypass_approvals: bool = True
     notify_target: Optional[str] = None  # extra messaging target ("telegram:123")
     always_allowed_tools: list[str] = field(default_factory=list)
     always_allowed_commands: list[str] = field(default_factory=list)
@@ -253,6 +257,7 @@ class ScheduledTask:
             "last_status": self.last_status,
             "run_count": self.run_count,
             "notify_on_completion": self.notify_on_completion,
+            "bypass_approvals": self.bypass_approvals,
             # UX-023: lets the detail freeze the pre-open mark for its "new" pills.
             "seen_runs_at": self.seen_runs_at,
             # Structured for the task page's revoke list; `entry` is the revoke handle.

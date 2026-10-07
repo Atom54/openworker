@@ -73,7 +73,7 @@ def test_create_automation_requires_schedule(tmp_path, monkeypatch):
     assert manager.task_store.list() == []
 
 
-# -- per-automation model + thinking level ---------------------------------------
+# -- per-automation model ----------------------------------------------------------
 
 
 def _base(**extra) -> dict:
@@ -140,3 +140,31 @@ def test_manual_run_without_overrides_uses_the_app_default(tmp_path, monkeypatch
     manager.model = "app-default-model"
     task_id = manager.create_automation(_base())["task"]["id"]
     assert manager.prepare_manual_run(task_id)["model"] == "app-default-model"
+
+
+def test_bypass_approvals_is_on_by_default_and_drives_every_run(tmp_path, monkeypatch):
+    """One switch per automation: on (the default, old records included) its scheduled and
+    manual runs go through in bypass-approvals; off, they ask as before."""
+    from coworker.automation.models import ScheduledTask
+    from coworker.permissions import Mode
+
+    manager = _manager(tmp_path, monkeypatch)
+    manager.mode = Mode.INTERACTIVE  # the app default must not be what makes this pass
+    task = manager.create_automation(_base())["task"]
+    assert task["bypass_approvals"] is True
+    saved = manager.task_store.get(task["id"])
+    legacy = {k: v for k, v in saved.to_dict().items() if k != "bypass_approvals"}
+    assert ScheduledTask.from_dict(legacy).bypass_approvals is True
+
+    run_sid = manager.prepare_manual_run(task["id"])["session_id"]
+    assert manager.session_store.load(run_sid).mode == Mode.BYPASS_APPROVALS.value
+    engine = manager._build_task_engine(saved, session_id="s-on")
+    assert engine.permissions.mode is Mode.BYPASS_APPROVALS
+
+    manager.update_automation(task["id"], {"bypass_approvals": False})
+    saved = manager.task_store.get(task["id"])
+    assert saved.bypass_approvals is False
+    engine = manager._build_task_engine(saved, session_id="s-off")
+    assert engine.permissions.mode is Mode.INTERACTIVE
+    run_sid = manager.prepare_manual_run(task["id"])["session_id"]
+    assert manager.session_store.load(run_sid).mode == Mode.INTERACTIVE.value

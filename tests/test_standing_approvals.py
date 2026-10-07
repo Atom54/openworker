@@ -112,9 +112,8 @@ def test_standing_rule_candidate():
         standing_rule_candidate("send_message", {"target": "slack:C1"}, _Meta())
         == "slack:C1"
     )
-    # fork: shell pins the exact command text
-    assert standing_rule_candidate("run_shell", {"command": " ls "}, _Meta()) == "ls"
-    assert standing_rule_candidate("run_shell", {"command": ""}, _Meta()) is None
+    # exec risk is never eligible, even with a hand-crafted arg
+    assert standing_rule_candidate("run_shell", {"command": "ls"}, _Meta()) is None
     # no declared target argument → not eligible
     assert (
         standing_rule_candidate(
@@ -165,16 +164,6 @@ def test_engine_matches_target(tmp_path):
     d = e.evaluate("send_message", {"target": "slack:T1/C1", "text": "hi"}, _Meta())
     assert d.allowed and d.rule == "send_message → slack:T1/C1"
     miss = e.evaluate("send_message", {"target": "slack:T1/C2", "text": "hi"}, _Meta())
-    assert not miss.allowed and miss.needs_user
-
-
-def test_task_rule_allows_exact_shell_command(tmp_path):
-    # Fork: "Allow every time" on a run's shell card pins the exact command text.
-    cmd = "if [ -n \"$X\" ]; then .venv/bin/python scripts/watch.py; else exit 2; fi"
-    e = PermissionEngine(workspace_root=tmp_path, task_rules={"run_shell": {cmd}})
-    hit = e.evaluate("run_shell", {"command": cmd}, None)
-    assert hit.allowed and "standing rule" in hit.reason
-    miss = e.evaluate("run_shell", {"command": cmd + " && rm -rf ~"}, None)
     assert not miss.allowed and miss.needs_user
 
 
@@ -262,7 +251,8 @@ async def test_scheduled_approver_parks_and_mints(tmp_path, monkeypatch):
     ws = tmp_path / "ws"
     ws.mkdir()
     manager = SessionManager(data_dir=tmp_path / "data", provider=_provider())
-    task = _task(workspace=str(ws), agent="cowork")
+    # The asking path: bypass (the automation default) would never reach the approver.
+    task = _task(workspace=str(ws), agent="cowork", bypass_approvals=False)
     manager.task_store.save(task)
     run = TaskRun(task_id=task.id)
     manager.task_store.add_run(run)
@@ -360,8 +350,8 @@ def test_mint_task_rule_validates(tmp_path, monkeypatch):
     assert not manager.mint_task_rule(
         "session-1", "send_message", {"target": "slack:C1"}, _Meta()
     )
-    # Fork: shell mints a rule bound to the exact command.
-    assert manager.mint_task_rule(
+    # Exec risk → never mintable, even from a run session.
+    assert not manager.mint_task_rule(
         run.session_id, "run_shell", {"command": "ls"}, _Meta()
     )
     # No declared target argument → not mintable.
@@ -373,8 +363,7 @@ def test_mint_task_rule_validates(tmp_path, monkeypatch):
         run.session_id, "send_message", {"target": "slack:C1"}, _Meta()
     )
     assert manager.task_store.get(task.id).always_allowed_tools == [
-        "run_shell ls",
-        "send_message slack:C1",
+        "send_message slack:C1"
     ]
 
 
