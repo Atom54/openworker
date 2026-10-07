@@ -36,7 +36,7 @@ test("the same state renders as the parked Inbox item and resolves with the full
 test("the rail switches cards and lands on the card's first state", async ({ page }) => {
   await page.goto("/#/gallery");
   await page.getByTestId("gallery-card-work-items").click();
-  await expect(page).toHaveURL(/#\/gallery\/work-items\/three-items$/);
+  await expect(page).toHaveURL(/#\/gallery\/work-items\/launch-plan$/);
   await expect(page.getByTestId("itemsreq-card")).toBeVisible();
 });
 
@@ -58,7 +58,7 @@ test("a scenario opens the real app on a saved moment; answers are printed, not 
 
 test("an attended scenario replays its live card and fills the rail", async ({ page }) => {
   await page.goto("/?scenario=lead-team-running-approval#/s/scn-lead-3b");
-  await expect(page.getByTestId("boardwake-card")).toBeVisible();
+  await expect(page.getByTestId("team-update")).toBeVisible();
   await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible();
   await page.getByRole("button", { name: "Allow once" }).click();
   await page.getByTestId("scenario-sent-toggle").click();
@@ -78,6 +78,18 @@ for (const id of (process.env.GALLERY_SCENARIO || "").split(",").map((s) => s.tr
 }
 
 const shots = (process.env.GALLERY_SHOT || "").split(",").map((s) => s.trim()).filter(Boolean);
+for (const place of ["session", "inbox"]) {
+  test(`Advanced approval guidance is editable in ${place}`, async ({ page }) => {
+    await page.goto(`/#/gallery/team-request/approval-guidance?place=${place}`);
+    await expect(page.getByTestId("teamreq-advanced")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByLabel("Approval guidance · sam")).not.toBeVisible();
+    await page.getByTestId("teamreq-advanced").click();
+    await page.getByLabel("Approval guidance · sam").fill("Local tests only. No remote writes.");
+    await page.getByTestId("teamreq-approve").click();
+    await expect(page.getByTestId("gallery-response")).toContainText("Local tests only. No remote writes.");
+    await expect(page.getByTestId("gallery-response")).toContainText("approval_guidance");
+  });
+}
 for (const shot of shots) {
   test(`screenshot ${shot}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 1000 });

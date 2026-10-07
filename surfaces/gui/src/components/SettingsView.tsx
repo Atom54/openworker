@@ -71,6 +71,7 @@ import { MachineModelsPanel } from "./MachineModelsPanel";
 import { MachinesSection } from "./MachinesSection";
 import { RemoteConnectorsPanel } from "./RemoteConnectorsPanel";
 import { MemorySection } from "./MemorySection";
+import { SandboxSection } from "./SandboxSection";
 import { PersonasTab } from "./PersonasTab";
 import { SkillsTab } from "./SkillsTab";
 import { showPersonas } from "../flags";
@@ -90,6 +91,7 @@ export type SetTab =
   | "skills"
   | "voice"
   | "memory"
+  | "sandbox"
   | "machines"
   | "connectors"
   | "personas"
@@ -120,6 +122,7 @@ type SetIcon =
   | "book"
   | "refresh"
   | "plug"
+  | "shield"
   | "user";
 // `labelKey` = the i18n key for the label; tabs without one yet show `label` as is.
 type TabDef = { key: SetTab; label: string; labelKey?: string; icon: SetIcon };
@@ -147,6 +150,7 @@ const SET_GROUPS: { name: string; nameKey?: string; scope: "app" | "machine" | "
       { key: "context", label: "Context optimization", labelKey: "settings.tab.context", icon: "refresh" },
       { key: "skills", label: "Skills", labelKey: "settings.tab.skills", icon: "book" },
       { key: "memory", label: "Memory", labelKey: "settings.tab.memory", icon: "archive" },
+      { key: "sandbox", label: "Sandbox", labelKey: "settingsx.tab.sandbox", icon: "shield" },
       { key: "personas", label: "Coworkers", labelKey: "settings.tab.personas", icon: "sparkle" },
     ],
   },
@@ -164,8 +168,12 @@ export function SettingsView({
   onCreateSkill,
   onAskWorker,
   onBack,
+  onSandboxProviderChanged,
 }: {
   initialTab?: SetTab;
+  // Sandbox: the provider changed and the server dropped these sessions' engines; the
+  // app reconnects the one on screen so it is rebuilt (or refused) under the new rule.
+  onSandboxProviderChanged?: (sessionIds: string[]) => void;
   // "Back to app" on the rail — returns to the conversation surface.
   onBack?: () => void;
   onOpenPersona?: (id: string, machineId?: string | null) => void;
@@ -387,6 +395,8 @@ export function SettingsView({
               machine={scoped}
               onAskWorker={(machineId) => onAskWorker?.(machineId)}
             />
+          ) : tab === "sandbox" ? (
+            <SandboxSection key={scopeId || "local"} machine={scoped} onProviderChanged={onSandboxProviderChanged} />
           ) : tab === "machines" ? (
             <MachinesSection />
           ) : tab === "slack" || tab === "github" ? (

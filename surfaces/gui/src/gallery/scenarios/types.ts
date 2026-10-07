@@ -39,4 +39,6 @@ export interface Scenario {
   /** Right-rail data. */
   team?: { team_id: string; chat_enabled?: boolean; workers: ScenarioWorker[] };
   board?: Board;
+  team_summary?: import("../../teamView").TeamSummary;
+  worker_messages?: Record<string, ConversationMessage[]>;
 }

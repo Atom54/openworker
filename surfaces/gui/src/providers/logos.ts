@@ -11,6 +11,9 @@ import gemini from "./logos/gemini.svg";
 import byteplus from "./logos/byteplus.svg";
 import volcengine from "./logos/volcengine.svg";
 import ollama from "./logos/ollama.svg";
+// llama.cpp: selfhst/icons (CC BY 4.0); vLLM: homarr-labs/dashboard-icons (Apache 2.0).
+import llamacpp from "./logos/llamacpp.svg";
+import vllm from "./logos/vllm.svg";
 import bedrock from "./logos/bedrock.svg";
 import vertex from "./logos/vertex.svg";
 // azure.svg is a simplified in-house mark in the Azure blues (the lobe-icons set we vendor
@@ -39,10 +42,14 @@ export const PROVIDER_LOGOS: Record<string, string> = {
   "ark-agent-plan-cn": volcengine,
   meta,
   ollama,
+  llamacpp,
+  vllm,
   bedrock,
   vertex,
   azure,
   openrouter,
+  // Same mark for the signed-in OpenRouter provider: same models, billed to the account.
+  "openrouter-account": openrouter,
   fireworks,
   together,
   zai,
@@ -62,10 +69,13 @@ export const PROVIDER_ORDER = [
   "ark-agent-plan-cn",
   "meta",
   "ollama",
+  "llamacpp",
+  "vllm",
   "bedrock",
   "vertex",
   "azure",
   "openrouter",
+  "openrouter-account",
   "fireworks",
   "together",
   "zai",

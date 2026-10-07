@@ -10,6 +10,7 @@ workspace path. Other permission grants remain global-only.
 from __future__ import annotations
 
 import os
+import re
 
 try:
     import tomllib  # stdlib since 3.11
@@ -114,6 +115,28 @@ class Config:
     # the signed-in desktop"). Empty override ⇒ the cloud machines surface is
     # off entirely; dev/BYO deployments point elsewhere.
     cloud_machines_base: str = "https://machines.openworker.com"
+    # Where agents' commands and file tools run: "direct" (in this process, unconfined),
+    # "seatbelt" (macOS: a process on this Mac under the system sandbox), "openshell" (one
+    # OpenShell sandbox per agent). Sessions are refused when the chosen sandbox is not
+    # usable. Unset = the default rule in coworker/sandbox/selection.py. Machine-level
+    # only: a repository's own config must never be able to switch the sandbox off.
+    # Environment override: OPENWORKER_SANDBOX_PROVIDER.
+    sandbox_provider: Optional[str] = None
+    # Credential files the user chose to share with sandboxes (design doc, section 11b):
+    # `[[sandbox_credentials]]` tables with name, path, hosts, enabled. Machine-level only,
+    # for the same reason as the provider. The shipped entries and their defaults are in
+    # coworker/sandbox/credentials.py; an entry here edits or adds by name.
+    sandbox_credentials: list[dict[str, Any]] = field(default_factory=list)
+    # Which hosts a sandbox may reach: a profile name from coworker/sandbox/network_profiles.py
+    # ("allowlist" when unset, "open" on Windows). Machine-level, like the provider.
+    sandbox_network_profile: Optional[str] = None
+    # The sites an `allowlist` sandbox may reach, "host:port" (a bare host means 443).
+    # Empty until the user ticks some in Settings ▸ Sandbox.
+    sandbox_network_hosts: list[str] = field(default_factory=list)
+    # Developer tool folders under the home folder a sandbox may read (design doc, Windows
+    # 3d.4): `[[sandbox_toolchains]]` tables with name, path, enabled, editing or adding to
+    # the shipped list in coworker/sandbox/toolchains.py by name. Machine-level.
+    sandbox_toolchains: list[dict[str, Any]] = field(default_factory=list)
 
 
 _FIELDS = {
@@ -123,6 +146,11 @@ _FIELDS = {
     "max_output_tokens",
     "reasoning_effort",
     "tool_result_max_bytes",
+    "sandbox_provider",
+    "sandbox_credentials",
+    "sandbox_network_profile",
+    "sandbox_network_hosts",
+    "sandbox_toolchains",
     "compaction_cap_tokens",
     "compaction_summary_max_tokens",
     "allowed_commands",
@@ -146,6 +174,11 @@ _FIELDS = {
 # for a canonically trusted workspace; `auto_allow` and `allowed_domains` remain user-global
 # only (a repo must not be able to widen the agent's command or network reach).
 _GLOBAL_ONLY_FIELDS = {
+    "sandbox_provider",
+    "sandbox_credentials",
+    "sandbox_network_profile",
+    "sandbox_network_hosts",
+    "sandbox_toolchains",
     "allowed_commands",
     "auto_allow",
     "allowed_domains",
@@ -157,6 +190,84 @@ _WORKSPACE_FIELDS = _FIELDS - _GLOBAL_ONLY_FIELDS
 
 def global_config_path() -> Path:
     return state_dir() / "config.toml"
+
+
+def set_global_value(key: str, value: str, *, path: Optional[Path] = None) -> Path:
+    """Set one top-level string key in the machine's config.toml, keeping the rest of the
+    file as it is. The line goes at the top, because a top-level key must come before any
+    table header."""
+    if key not in _FIELDS:
+        raise ValueError(f"not a config key: {key}")
+    target = Path(path) if path is not None else global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = target.read_text(encoding="utf-8").splitlines() if target.is_file() else []
+    kept = [line for line in lines if not re.match(rf"\s*{re.escape(key)}\s*=", line)]
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    target.write_text("\n".join([f'{key} = "{escaped}"', *kept]) + "\n", encoding="utf-8")
+    return target
+
+
+def set_global_list(key: str, values: list[str], *, path: Optional[Path] = None) -> Path:
+    """Set one top-level list-of-strings key in the machine's config.toml, like
+    set_global_value; an empty list removes the key. A hand-written array spread over
+    several lines is removed whole."""
+    if key not in _FIELDS:
+        raise ValueError(f"not a config key: {key}")
+    target = Path(path) if path is not None else global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = target.read_text(encoding="utf-8").splitlines() if target.is_file() else []
+    kept: list[str] = []
+    inside = False
+    for line in lines:
+        if inside:
+            inside = "]" not in line
+            continue
+        if re.match(rf"\s*{re.escape(key)}\s*=", line):
+            inside = "[" in line and "]" not in line
+            continue
+        kept.append(line)
+    if values:
+        items = ", ".join('"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"' for v in values)
+        kept = [f"{key} = [{items}]", *kept]
+    target.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return target
+
+
+def set_global_tables(key: str, rows: list[dict[str, Any]], *, path: Optional[Path] = None) -> Path:
+    """Replace every `[[key]]` table in the machine's config.toml with `rows`, keeping the
+    rest of the file. Values may be strings, booleans, integers and lists of strings."""
+    if key not in _FIELDS:
+        raise ValueError(f"not a config key: {key}")
+    target = Path(path) if path is not None else global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = target.read_text(encoding="utf-8").splitlines() if target.is_file() else []
+    kept: list[str] = []
+    skipping = False
+    header = re.compile(r"^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$")
+    for line in lines:
+        m = header.match(line)
+        if m:
+            skipping = m.group(1).strip() == key and line.strip().startswith("[[")
+        if not skipping:
+            kept.append(line)
+    while kept and not kept[-1].strip():
+        kept.pop()
+
+    def value(v: Any) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, (list, tuple)):
+            return "[" + ", ".join(value(str(x)) for x in v) + "]"
+        text = str(v).replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{text}"'
+
+    out = list(kept)
+    for row in rows:
+        out += ["", f"[[{key}]]"] + [f"{k} = {value(v)}" for k, v in row.items() if v is not None]
+    target.write_text("\n".join(out).lstrip("\n") + "\n", encoding="utf-8")
+    return target
 
 
 def _read(path: Path) -> dict[str, Any]:

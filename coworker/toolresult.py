@@ -32,6 +32,14 @@ _MIN_KEEP = 1_000
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
+class PagedToolResult(dict):
+    """Trusted native reader result with its own bounded, replayable pagination.
+
+    Do not head/tail its text: the cursor describes exactly the returned range.
+    JSON/tool payloads cannot opt in; only native code can construct this type.
+    """
+
+
 def serialize_result(result: Any) -> str:
     """Exactly what `_tool_result_message` puts in the message content."""
     return result if isinstance(result, str) else json.dumps(result, default=str)
@@ -61,6 +69,22 @@ def head_tail(text: str, keep_bytes: int, *, spill_path: Optional[Path], total_b
     return head + marker + tail
 
 
+def _fit(cut, keep: int, overshoot) -> str:
+    """`cut(keep)`, shrinking `keep` until `overshoot(result)` is <= 0. One retry by the
+    overshoot is not enough: a byte cut drops any character split at the boundary (so
+    shrinking by N can save fewer than N bytes) and `head_tail` halves `keep` with floor
+    division (so shrinking by 1 can save nothing). Bounded — `head_tail` never keeps less
+    than `_MIN_KEEP`, so a budget below that can't be met by shrinking."""
+    bounded = cut(keep)
+    for _ in range(8):
+        over = overshoot(bounded)
+        if over <= 0:
+            break
+        keep -= max(over, 2)
+        bounded = cut(keep)
+    return bounded
+
+
 def bound_tool_result(
     result: Any,
     *,
@@ -71,6 +95,8 @@ def bound_tool_result(
 ) -> Any:
     """Return `result` unchanged when it fits, else a bounded copy. `max_bytes` None or
     <= 0 disables bounding. Spill files are written only when `spill_dir` is given."""
+    if isinstance(result, PagedToolResult):
+        return dict(result)
     if not max_bytes or max_bytes <= 0:
         return result
     text = serialize_result(result)
@@ -106,15 +132,21 @@ def bound_tool_result(
             budget = max_bytes - others - _MARKER_RESERVE
             original = out[key]
             path = spill(f"{step:04d}-{safe_tool}-{_SAFE_NAME.sub('_', key)[:30]}.txt", original)
-            bounded = head_tail(original, budget, spill_path=path, total_bytes=_nbytes(original))
-            # JSON escaping (newlines, quotes) grows the serialised size; tighten once.
-            over = _nbytes(serialize_result({**out, key: bounded})) - max_bytes
-            if over > 0:
-                bounded = head_tail(original, budget - over, spill_path=path, total_bytes=_nbytes(original))
-            out[key] = bounded
+            # JSON escaping (newlines, quotes) grows the serialised size; tighten to fit.
+            out[key] = _fit(
+                lambda keep: head_tail(original, keep, spill_path=path, total_bytes=_nbytes(original)),
+                budget,
+                lambda b: _nbytes(serialize_result({**out, key: b})) - max_bytes,
+            )
             if _nbytes(serialize_result(out)) <= max_bytes:
                 break
         return out
 
     path = spill(f"{step:04d}-{safe_tool}.txt", text)
-    return head_tail(text, max_bytes - _MARKER_RESERVE, spill_path=path, total_bytes=_nbytes(text))
+    # The marker names the spill file, and a long path can outgrow the reserve; tighten to fit
+    # (OPE-199: the cap was overshot by the length of the path).
+    return _fit(
+        lambda keep: head_tail(text, keep, spill_path=path, total_bytes=_nbytes(text)),
+        max_bytes - _MARKER_RESERVE,
+        lambda b: _nbytes(b) - max_bytes,
+    )

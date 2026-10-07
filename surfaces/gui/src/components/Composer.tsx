@@ -3,7 +3,7 @@ import { getI18n, useTranslation } from "react-i18next";
 import type { Attachment, SessionUsage } from "../types";
 import { isPdfFile, readFile } from "../attach";
 import { ProjectBindMenu } from "./ProjectBindMenu";
-import { getSettings, inspectPdf, sessionSkills, type SessionSkillRow } from "../api";
+import { getSessionModelSettings, getSettings, inspectPdf, sessionSkills, setSessionModelSettings, type ModelControls, type SessionSkillRow } from "../api";
 import { formatTokens, totalTokens } from "../usage";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
@@ -45,17 +45,24 @@ const PERMISSION_OPTIONS: ModeOption[] = [
     gated: true,
   },
   {
-    value: "auto",
+    // The wire value is the server's real name; "auto" (the legacy spelling saved by
+    // older sessions and configs) is folded onto it by `canonicalMode`.
+    value: "bypass-approvals",
     label: "composer.mode.auto",
     description: "composer.mode.auto_desc",
     caution: true,
   },
 ];
 
+/** The server's name for a mode value: the legacy "auto" reads as "bypass-approvals". */
+export function canonicalMode(value: string): string {
+  return value === "auto" ? "bypass-approvals" : value;
+}
+
 /** The picker's label for a mode value ("auto-approve" -> "Auto-approve"). Exported so the
  * transcript's mode markers read the same names the user just chose from. */
 export function modeLabel(value: string): string {
-  const option = PERMISSION_OPTIONS.find((o) => o.value === value);
+  const option = PERMISSION_OPTIONS.find((o) => o.value === canonicalMode(value));
   return option ? getI18n().t(option.label) : value;
 }
 
@@ -78,6 +85,9 @@ const mergeAttachments = (cur: Attachment[], add: Attachment[]): Attachment[] =>
 };
 
 interface Props {
+  // Worker-pane variant: retain the shared input, attachments and send/stop;
+  // omit session rebinding, model changes and global native dictation controls.
+  compact?: boolean;
   mode: string;
   model: string;
   models?: string[];
@@ -88,6 +98,10 @@ interface Props {
   // names what would work instead of a bare warning.
   wantedModels?: string[];
   modelLabels?: Record<string, string>; // curated display names (raw id when absent)
+  // UX-055: saved per-model settings (context size, thinking) for the picker's notes,
+  // and the way into Models & Keys' Pick a model dialog.
+  modelConfig?: Record<string, { context_size?: number; thinking?: boolean }>;
+  onPickModel?: () => void;
   // The model is FIXED once the session has history (§17): the picker renders ONLY on a fresh
   // session; after the first turn the fact lives in the topbar subtitle (§22) — no
   // interactive-then-disabled control.
@@ -96,6 +110,9 @@ interface Props {
   // so `running` is true — but typing must stay possible, because a typed reply
   // IS an answer (decline-with-feedback). Unblocks Send while the gate is up.
   gateOpen?: boolean;
+  // What the open gate is, for the placeholder: a proposal to adjust, or a question
+  // whose answer the composer sends.
+  gateKind?: "proposal" | "question";
   connected: boolean;
   // False when the default model's provider has no key — the composer shows a "connect a model"
   // banner and routes sends to setup (preserving the draft) instead of dropping them.
@@ -119,9 +136,15 @@ interface Props {
   // when" is one mental model. Absent handler = no toggle (e.g. Chat).
   unattended?: boolean;
   onUnattendedChange?: (on: boolean) => void;
+  // Attendance "auto" (the third position): the engine answers questions and requests
+  // by fixed rule while nobody is there. Absent handler = no toggle.
+  attendance?: "attended" | "inbox" | "auto";
+  onAutoAnswerChange?: (on: boolean) => void;
   // The pending-approval card rendered above the input (plan / work-items / team / tool /
   // folder requests). Attended sessions only — Unattended parks the prompt in the Inbox.
   approvalSlot?: ReactNode;
+  statusSlot?: ReactNode;
+  teamSlot?: ReactNode;
   // UX-044: "View & edit…" in the Project memory submenu routes to the memory panel.
   onOpenMemory?: () => void;
   // Push text + attachments into the composer (e.g. a start-panel task card). The `nonce` makes
@@ -193,7 +216,7 @@ export function Composer(props: Props) {
   // UX-044: which "This session" submenu is open (bindings live server-side).
   const [bindMenu, setBindMenu] = useState<"memory" | "board" | null>(null);
   // Bindings need a session and a workspace surface (Chat has neither).
-  const sessionRows = Boolean(props.sessionId && props.workspace !== undefined);
+  const sessionRows = !props.compact && Boolean(props.sessionId && props.workspace !== undefined);
   const bindRow = (icon: "book" | "table", label: string, kind: "memory" | "board") => (
     <button
       className={
@@ -270,7 +293,7 @@ export function Composer(props: Props) {
   // Dictation is intentionally native-only: the browser/dev build remains a local server client
   // and never turns on the browser microphone or ships audio anywhere.
   useEffect(() => {
-    if (!isTauri()) return;
+    if (props.compact || !isTauri()) return;
     const refresh = (event?: Event) => {
       const supplied = (event as CustomEvent<DictationStatus> | undefined)?.detail;
       if (supplied) {
@@ -397,6 +420,7 @@ export function Composer(props: Props) {
     const skill = prefixIntact ? pendingSkill!.name : undefined;
     const body = (skill ? text.slice(skill.length + 1) : text).trim();
     if (
+      !props.connected ||
       (!body && attachments.length === 0 && !skill) ||
       (props.running && !props.gateOpen) ||
       dictation?.recording ||
@@ -491,15 +515,29 @@ export function Composer(props: Props) {
   };
 
   const modelsLoaded = !!(props.models && props.models.length);
+  // UX-055: the picker groups models by where they run and notes each one's saved
+  // context and thinking; the label drops the provider when it sits on the row's note.
+  const localPrefixes = ["ollama:", "llamacpp:", "vllm:"];
+  const isLocalModel = (m: string) => localPrefixes.some((p) => m.startsWith(p));
   const modelOptions: Option[] = Array.from(
     new Set([props.model, ...(props.models || [])]),
-  ).map((m) => ({
-    value: m,
-    label: props.modelLabels?.[m] || shortModel(m),
-    ...(props.unavailableModels?.includes(m)
-      ? { description: t("onmachine.composer.model_unavailable") }
-      : {}),
-  }));
+  ).sort((a, b) => Number(isLocalModel(b)) - Number(isLocalModel(a))).map((m) => {
+    const full = props.modelLabels?.[m] || shortModel(m);
+    const [name, provider] = full.split(" · ");
+    const cfg = props.modelConfig?.[m];
+    const notes = isLocalModel(m)
+      ? [cfg?.context_size ? `${Math.round(cfg.context_size / 1024)}K` : "", cfg?.thinking ? t("composer.model.thinking") : ""]
+      : [provider || (m.includes(":") ? m.split(":")[0] : "")];
+    return {
+      value: m,
+      label: name,
+      group: t(isLocalModel(m) ? "composer.model.group_local" : "composer.model.group_cloud"),
+      meta: notes.filter(Boolean).join(" · "),
+      ...(props.unavailableModels?.includes(m)
+        ? { description: t("onmachine.composer.model_unavailable") }
+        : {}),
+    };
+  });
 
   const iconBtn =
     "w-7 h-7 grid place-items-center rounded-md text-faint hover:text-ink hover:bg-paper shrink-0";
@@ -547,6 +585,7 @@ export function Composer(props: Props) {
 
   return (
     <div className="composer-wrap px-6 pb-5 pt-4">
+      {props.statusSlot && <div className="max-w-3xl mx-auto mb-3">{props.statusSlot}</div>}
       {props.approvalSlot}
 
       {dictationError && (
@@ -581,6 +620,7 @@ export function Composer(props: Props) {
         </div>
       )}
 
+      {props.teamSlot}
       <div
         className={
           "composer max-w-3xl mx-auto rounded-2xl border border-ink/[0.08] bg-panel shadow-[0_1px_2px_rgba(0,0,0,0.03),0_4px_14px_-10px_rgba(0,0,0,0.08)]" +
@@ -629,11 +669,12 @@ export function Composer(props: Props) {
           </div>
         )}
         <textarea
+          aria-label={props.placeholder}
           ref={textareaRef}
           className="w-full block px-3.5 pt-3.5 pb-1.5 text-body"
           placeholder={
             props.gateOpen
-              ? t("composer.placeholder_gate")
+              ? t(props.gateKind === "question" ? "composer.placeholder_question" : "composer.placeholder_gate")
               : props.placeholder || t("composer.placeholder")
           }
           value={text}
@@ -741,6 +782,8 @@ export function Composer(props: Props) {
               onModeChange={props.onModeChange}
               unattended={props.unattended}
               onUnattendedChange={props.onUnattendedChange}
+              attendance={props.attendance}
+              onAutoAnswerChange={props.onAutoAnswerChange}
             />
           ) : null}
 
@@ -751,7 +794,7 @@ export function Composer(props: Props) {
           {/* model — a quiet chip, now for the session's whole life (§17 rev 2026-07-22:
               mid-session switching shipped, so the picker stays actionable; the topbar
               subtitle still states the current model). */}
-          {!dictation?.recording && (needsModel ? (
+          {!props.compact && !dictation?.recording && (needsModel ? (
             <button
               className="pill model-warn chip"
               onClick={() => props.onConnectModel?.()}
@@ -775,6 +818,16 @@ export function Composer(props: Props) {
               align="right"
               displayLabel={modelName}
               tooltip={modelTip}
+              searchFrom={6}
+              searchPlaceholder={t("composer.model.search")}
+              testId="model-picker"
+              footer={
+                props.onPickModel ? (
+                  <button onClick={props.onPickModel} data-testid="model-picker-pick">
+                    + {t("composer.model.pick_or_configure")}
+                  </button>
+                ) : null
+              }
               leading={
                 props.contextBar === true && hasUsage ? (
                   <ContextRing pct={ctxPct} label={ctxLine} testId="usage-chip" />
@@ -792,8 +845,12 @@ export function Composer(props: Props) {
             </button>
           ))}
 
+          {!props.compact && modelsLoaded && props.sessionId && (
+            <SessionModelControls sessionId={props.sessionId} model={props.model} onPickModel={props.onPickModel} />
+          )}
+
           {/* mic — immediately before send (owner call, DMG #28 walkthrough) */}
-          {isTauri() && (
+          {!props.compact && isTauri() && (
             <button
               className={
                 iconBtn +
@@ -896,14 +953,23 @@ function ModeMenu({
   onModeChange,
   unattended,
   onUnattendedChange,
+  attendance,
+  onAutoAnswerChange,
   reviewerPaused,
 }: {
   mode: string;
   onModeChange: (mode: string) => void;
   unattended?: boolean;
   onUnattendedChange?: (on: boolean) => void;
+  attendance?: "attended" | "inbox" | "auto";
+  onAutoAnswerChange?: (on: boolean) => void;
   reviewerPaused?: boolean;
 }) {
+  // A session saved under the legacy "auto" spelling is the same mode as the picker's
+  // "bypass-approvals" entry: compare on the canonical value so its tick shows.
+  const canonical = canonicalMode(mode);
+  const inboxOn = attendance ? attendance === "inbox" : !!unattended;
+  const autoOn = attendance === "auto";
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   // The Auto-Approve entry is gated on the server flag. Fetch once on first open; a session
@@ -917,9 +983,9 @@ function ModeMenu({
       .catch(() => {});
   }, [open]);
   const options = PERMISSION_OPTIONS.filter(
-    (o) => !o.gated || autoApproveEnabled || o.value === mode,
+    (o) => !o.gated || autoApproveEnabled || o.value === canonical,
   );
-  const current = PERMISSION_OPTIONS.find((o) => o.value === mode);
+  const current = PERMISSION_OPTIONS.find((o) => o.value === canonical);
   return (
     <div className="relative">
       {/* Borderless, and it names the CHOSEN mode (owner ask 2026-07-11, competitor composer
@@ -963,14 +1029,14 @@ function ModeMenu({
                 <span
                   className={
                     "flex items-center text-ui " +
-                    (o.value === mode ? "font-medium text-accent" : "text-ink")
+                    (o.value === canonical ? "font-medium text-accent" : "text-ink")
                   }
                 >
                   {o.caution && (
                     <Icon name="warning" size={13} className="mr-1.5 shrink-0 text-warnInk" />
                   )}
                   {t(o.label)}
-                  {o.value === mode && <span className="ml-1.5">✓</span>}
+                  {o.value === canonical && <span className="ml-1.5">✓</span>}
                 </span>
                 <span className="text-label text-faint leading-snug">{t(o.description ?? "")}</span>
               </button>
@@ -986,12 +1052,27 @@ function ModeMenu({
                     </span>
                   </span>
                   <Toggle
-                    checked={!!unattended}
+                    checked={inboxOn}
                     onChange={onUnattendedChange}
                     title={t("composer.send_approvals_to_inbox")}
                   />
                 </div>
               </>
+            )}
+            {onAutoAnswerChange && (
+              <div className="flex items-center gap-2 px-2.5 py-1.5" data-testid="auto-answer-row">
+                <span className="flex-1 min-w-0">
+                  <span className="block text-ui text-ink">{t("composer.answer_for_me")}</span>
+                  <span className="block text-label text-faint leading-snug">
+                    {t("composer.answer_for_me_help")}
+                  </span>
+                </span>
+                <Toggle
+                  checked={autoOn}
+                  onChange={onAutoAnswerChange}
+                  title={t("composer.answer_for_me")}
+                />
+              </div>
             )}
           </div>
         </>
@@ -1028,5 +1109,215 @@ function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
         ✕
       </button>
     </div>
+  );
+}
+
+
+// UX-056: beside the model, this session's reasoning effort (a grey pill showing the
+// level; click for a slider over the model's own levels) and thinking switch (a brain;
+// click to flip). Each appears only when the model has it — the server says which
+// (providers/model_controls.py). The model's default is a tick on the track and
+// "Default" under its name; a session that differs gets a small dot and a Reset.
+// No accent colour here: the composer stays muted.
+function SessionModelControls({
+  sessionId,
+  model,
+  onPickModel,
+}: {
+  sessionId: string;
+  model: string;
+  onPickModel?: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [controls, setControls] = useState<ModelControls | null>(null);
+  const [thinking, setThinking] = useState<boolean | null>(null);
+  const [effort, setEffort] = useState<string | null>(null);
+  const [drag, setDrag] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    setControls(null);
+    getSessionModelSettings(sessionId, model)
+      .then((s) => {
+        if (!live) return;
+        setControls(s.controls || null);
+        setThinking(s.thinking ?? null);
+        setEffort(s.reasoning_effort ?? null);
+      })
+      .catch(() => live && setControls(null));
+    return () => {
+      live = false;
+    };
+  }, [sessionId, model]);
+  const apply = (values: { thinking?: boolean | null; reasoning_effort?: string | null }) =>
+    setSessionModelSettings(sessionId, values).then((r) => {
+      if (!r.ok) return;
+      setThinking(r.thinking ?? null);
+      setEffort(r.reasoning_effort ?? null);
+    });
+  if (!controls) return null;
+  const think = controls.thinking.support === "supported" ? controls.thinking : null;
+  const reason = controls.reasoning.support === "supported" && (controls.reasoning.levels || []).length ? controls.reasoning : null;
+  if (!think && !reason) return null;
+  const levels = reason?.levels || [];
+  const label = (lvl: string) => t(`composer.model.effort_${lvl}`, { defaultValue: lvl });
+
+  const thinkOn = thinking ?? !!think?.default;
+  const thinkChanged = thinking !== null && thinking !== !!think?.default;
+  const level = effort ?? reason?.default ?? levels[0];
+  const effortChanged = effort !== null && effort !== reason?.default;
+  const at = Math.max(0, levels.indexOf(level));
+  // While dragging, the thumb follows the pointer's nearest level; it saves on release.
+  const shown = drag ?? at;
+  // The first and last levels sit at the very ends of the track: the thumb (30px, 3px
+  // inset) touches the edge there. A stop's centre is 18px in from each end at most.
+  const frac = (i: number) => (levels.length > 1 ? i / (levels.length - 1) : 0.5);
+  const centre = (i: number) => `calc(18px + (100% - 36px) * ${frac(i)})`;
+  const choose = (i: number) => {
+    const lvl = levels[Math.max(0, Math.min(levels.length - 1, i))];
+    if (!lvl || lvl === level) return;
+    const value = lvl === reason?.default ? null : lvl;
+    // Show the new level at once, so the thumb stays where it was let go of instead of
+    // sliding back to the old level until the server answers.
+    setEffort(value);
+    apply({ reasoning_effort: value });
+  };
+  // More than three levels crowd the row: name the ends, the current level and the
+  // default; the rest show when the pointer is over their stop.
+  const named = (i: number) =>
+    levels.length <= 3 || i === 0 || i === levels.length - 1 || i === shown || levels[i] === reason?.default;
+  const nearest = (clientX: number, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const f = (clientX - r.left - 18) / Math.max(1, r.width - 36);
+    return Math.max(0, Math.min(levels.length - 1, Math.round(f * (levels.length - 1))));
+  };
+  const dot = <span className="w-[5px] h-[5px] rounded-full bg-muted" aria-hidden />;
+
+  return (
+    <>
+      {reason && (
+        <div className="relative shrink-0">
+          <button
+            className={"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-meta text-ink " + (open ? "bg-lineStrong/60" : "bg-paper hover:bg-line")}
+            title={t("composer.model.effort_label")}
+            onClick={() => setOpen((v) => !v)}
+            data-testid="effort-pill"
+          >
+            {effortChanged && dot}
+            {label(level)}
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+              <div className="absolute z-40 bottom-full mb-2 right-0 w-[340px] rounded-2xl border border-line bg-panel shadow-2xl px-[18px] pt-4 pb-3" data-testid="effort-menu">
+                <div className="flex items-baseline gap-2 text-ui">
+                  <span className="text-faint">{t("composer.model.effort_label")}</span>
+                  <span className="font-semibold">{label(levels[shown] || level)}</span>
+                  {effortChanged && (
+                    <button className="ml-auto text-meta text-muted underline underline-offset-2 hover:text-ink" onClick={() => apply({ reasoning_effort: null })} data-testid="effort-reset">
+                      {t("composer.model.reset_to", { level: label(reason.default || "") })}
+                    </button>
+                  )}
+                </div>
+                <div className="flex justify-between text-meta text-faint mt-3.5 mb-1.5">
+                  <span>{t("composer.model.faster")}</span>
+                  <span>{t("composer.model.smarter")}</span>
+                </div>
+                <div
+                  className="relative h-[34px] rounded-[10px] bg-paper cursor-pointer touch-none outline-none focus-visible:ring-1 focus-visible:ring-lineStrong"
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={t("composer.model.effort_label")}
+                  aria-valuemin={0}
+                  aria-valuemax={levels.length - 1}
+                  aria-valuenow={shown}
+                  aria-valuetext={label(levels[shown])}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setDrag(nearest(e.clientX, e.currentTarget));
+                  }}
+                  onPointerMove={(e) => {
+                    const i = nearest(e.clientX, e.currentTarget);
+                    if (drag !== null) setDrag(i);
+                    setHover(i);
+                  }}
+                  onPointerLeave={() => setHover(null)}
+                  onPointerUp={(e) => {
+                    const i = nearest(e.clientX, e.currentTarget);
+                    setDrag(null);
+                    choose(i);
+                  }}
+                  onPointerCancel={() => setDrag(null)}
+                  onKeyDown={(e) => {
+                    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+                    if (step) choose(at + step);
+                    else if (e.key === "Home") choose(0);
+                    else if (e.key === "End") choose(levels.length - 1);
+                    else return;
+                    e.preventDefault();
+                  }}
+                  data-testid="effort-slider"
+                >
+                  <div className="absolute inset-y-0 left-0 rounded-[10px] bg-lineStrong" style={{ width: `calc(${centre(shown)} + 15px)` }} />
+                  {levels.map((lvl, i) =>
+                    i === shown ? null : lvl === reason.default ? (
+                      <span key={lvl} className="absolute top-1/2 w-[2px] h-3 -mt-1.5 -ml-px rounded-sm bg-muted" style={{ left: centre(i) }} />
+                    ) : (
+                      <span key={lvl} className="absolute top-1/2 w-1 h-1 -mt-0.5 -ml-0.5 rounded-full bg-faint" style={{ left: centre(i) }} />
+                    ),
+                  )}
+                  <span
+                    className={"absolute top-[3px] w-[30px] h-[28px] -ml-[15px] rounded-[9px] bg-panel shadow pointer-events-none " + (drag === null ? "transition-[left]" : "")}
+                    style={{ left: centre(shown) }}
+                    data-testid="effort-thumb"
+                  />
+                </div>
+                <div className="relative h-[34px] text-[12px] text-faint">
+                  {levels.map((lvl, i) => (
+                    <span
+                      key={lvl}
+                      className={
+                        "absolute top-1.5 -translate-x-1/2 whitespace-nowrap text-center transition-opacity " +
+                        (i === shown ? "text-ink font-semibold " : "") +
+                        (named(i) || i === hover ? "opacity-100" : "opacity-0")
+                      }
+                      style={{ left: centre(i) }}
+                    >
+                      {label(lvl)}
+                      {lvl === reason.default && <small className="block text-[10.5px] font-normal text-muted">{t("composer.model.default")}</small>}
+                    </span>
+                  ))}
+                </div>
+                {onPickModel && (
+                  <div className="flex justify-end mt-2.5 text-meta">
+                    <button className="text-muted hover:text-ink" onClick={() => { setOpen(false); onPickModel(); }}>
+                      {t("composer.model.model_defaults")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {think && (
+        <button
+          className={"relative w-7 h-7 grid place-items-center rounded-md hover:bg-paper shrink-0 " + (thinkOn ? "text-ink" : "text-faint")}
+          title={t(thinkOn ? "composer.model.thinking_on" : "composer.model.thinking_off") + (thinkChanged ? "" : ` · ${t("composer.model.default")}`)}
+          aria-label={t("composer.model.thinking_label")}
+          aria-pressed={thinkOn}
+          onClick={() => {
+            const next = !thinkOn;
+            apply({ thinking: next === !!think.default ? null : next });
+          }}
+          data-testid="thinking-toggle"
+        >
+          <Icon name="brain" size={16} />
+          {!thinkOn && <span className="absolute w-[18px] h-[1.6px] bg-faint rotate-[-45deg] rounded-sm" aria-hidden />}
+          {thinkChanged && <span className="absolute top-[3px] right-[3px] w-[5px] h-[5px] rounded-full bg-muted" aria-hidden />}
+        </button>
+      )}
+    </>
   );
 }

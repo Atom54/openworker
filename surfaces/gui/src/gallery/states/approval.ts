@@ -3,6 +3,11 @@ import type { CardState } from "../types";
 
 export const approvalStates: CardState[] = [
   {
+    id: "human-required", title: "A mandatory human decision", context: { mode: "auto-approve" },
+    payload: { name: "write_file", arguments: { path: ".github/workflows/check.yml", content: "name: Check\non: push\n" },
+      reason: "Protected project configuration", escalation: { kind: "human_required", reason: "This file executes in CI. A person must approve changes." } },
+  },
+  {
     id: "shell-command",
     title: "Shell command",
     note: "The common case in Manual mode: the command-scoped grant is offered, the tool-wide one is not.",
@@ -34,6 +39,7 @@ export const approvalStates: CardState[] = [
       arguments: { command: "python3 helper.py" },
       reason: "requires approval",
       reviewer_unsure: "This runs a newly created script whose effects cannot be determined from the command.",
+      escalation: { kind: "reviewer_unsure", reason: "This runs a newly created script whose effects cannot be determined from the command." },
     },
   },
   {
@@ -70,6 +76,68 @@ export const approvalStates: CardState[] = [
       arguments: { url: "https://docs.stripe.com/api/invoices/object" },
       reason: "Check the invoice object's PDF field",
       category: "network",
+    },
+  },
+  {
+    id: "site-off-the-allowed-sites",
+    title: "A site that is not on the allowed sites",
+    note: "The session is sandboxed with \"Only the sites you allow\" and the page is on a site outside the list. The card says so and offers to add the site to the machine's list (OPE-219). In Bypass the call is refused with no card.",
+    payload: {
+      name: "web_fetch",
+      arguments: { url: "https://weather.com/weather/today/l/San+Francisco+CA" },
+      reason: "weather.com is not on your allowed sites",
+      escalation: { kind: "human_required", reason: "weather.com is not on your allowed sites" },
+      site_wall: "weather.com",
+    },
+  },
+  {
+    id: "search-provider-off-the-allowed-sites",
+    title: "Web search when the search provider is not on the allowed sites",
+    note: "A search goes to one site, the configured provider. Same card, for that host.",
+    payload: {
+      name: "web_search",
+      arguments: { query: "weather in San Francisco today" },
+      reason: "api.search.brave.com is not on your allowed sites",
+      escalation: { kind: "human_required", reason: "api.search.brave.com is not on your allowed sites" },
+      search_provider: "brave",
+      site_wall: "api.search.brave.com",
+    },
+  },
+  {
+    id: "network-access-for-a-blocked-site",
+    title: "The agent asks for a site its commands cannot reach",
+    note: "A command failed inside the sandbox, the result named the blocked site, and the agent called request_network_access. The card gives the agent's reason and what the sandbox itself saw. A site for commands is never \"once\": this session, always, or no. Only a person answers; in Bypass the call is refused with no card (OPE-219).",
+    payload: {
+      name: "request_network_access",
+      arguments: { hosts: ["registry.npmjs.org"], reason: "npm install needs the package registry to download dependencies." },
+      reason: "asks to let this session's commands reach registry.npmjs.org",
+      escalation: { kind: "human_required", reason: "asks to let this session's commands reach registry.npmjs.org" },
+      category: "sandbox",
+      network_request: {
+        evidence: true,
+        reason: "npm install needs the package registry to download dependencies.",
+        hosts: [{ host: "registry.npmjs.org:443", blocked_seconds_ago: 20 }],
+      },
+    },
+  },
+  {
+    id: "network-access-before-any-attempt",
+    title: "The agent asks ahead for two sites, one never tried",
+    note: "The agent may ask before running a command. A site no command has tried says so, which is the person's cue to look twice at the reason.",
+    payload: {
+      name: "request_network_access",
+      arguments: { hosts: ["api.acme.dev", "db.acme.dev:5432"], reason: "The deploy script pushes the build to the Acme API and runs a migration on the database." },
+      reason: "asks to let this session's commands reach api.acme.dev, db.acme.dev:5432",
+      escalation: { kind: "human_required", reason: "asks to let this session's commands reach api.acme.dev, db.acme.dev:5432" },
+      category: "sandbox",
+      network_request: {
+        evidence: true,
+        reason: "The deploy script pushes the build to the Acme API and runs a migration on the database.",
+        hosts: [
+          { host: "api.acme.dev:443", blocked_seconds_ago: 240 },
+          { host: "db.acme.dev:5432", blocked_seconds_ago: null },
+        ],
+      },
     },
   },
   {

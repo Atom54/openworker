@@ -25,12 +25,14 @@ export function AddConnectionModal({
   c,
   cloud,
   title,
+  githubFlow,
   onClose,
   onChanged,
 }: {
   c: Connector;
   cloud: CloudStatus | null;
   title?: string; // e.g. "Add a workspace" — defaults to "Connect {title}"
+  githubFlow?: "install";
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -99,7 +101,7 @@ export function AddConnectionModal({
               ) : c.name === "hubspot" ? (
                 <HubSpotOneClick c={c} cloud={cloud} />
               ) : c.name === "github" ? (
-                <GithubOneClick c={c} cloud={cloud} />
+                <GithubOneClick c={c} cloud={cloud} flow={githubFlow} />
               ) : c.name === "slack" ? (
                 <SlackOneClick c={c} cloud={cloud} />
               ) : (
@@ -245,27 +247,24 @@ function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }
   );
 }
 
-function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }) {
+function GithubOneClick({ c, cloud, flow }: { c: Connector; cloud: CloudStatus | null; flow?: "install" }) {
   const { t: tt } = useTranslation();
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = async () => {
     setError(null);
-    const res = await connectManaged(c.name);
+    const res = await connectManaged(c.name, flow ? { flow } : undefined);
     if (res.ok) setWaiting(true);
     else setError(res.error || tt("modal.could_not_start_install"));
   };
   return (
     <div className="px-5 py-4 space-y-3">
       <p className="text-ui text-muted">
-        {tt("modal.github_blurb")}
+        {tt(flow === "install" ? "modal.github_install_blurb" : "modal.github_blurb")}
       </p>
       {cloud?.signed_in ? (
-        /* One button: the broker is authorize-first — it links an existing installation or
-           redirects the same tab on to the install page (the old "Already installed? Link
-           it" question and the Configure dead-end are gone). */
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-install-github-app" onClick={() => go()} disabled={waiting}>
-          {waiting ? tt("cloud.check_browser") : tt("modal.connect_github")}
+          {waiting ? tt("cloud.check_browser") : tt(flow === "install" ? "modal.choose_github_account" : "modal.connect_github")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />

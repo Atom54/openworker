@@ -25,6 +25,7 @@ import {
 } from "../api";
 import {
   getCloudMachines,
+  getPersonasIndex,
   hasWallet,
   isCloudMode,
   type Sandbox,
@@ -89,6 +90,14 @@ export function MachinesSection() {
   // signed-in desktop. A cloud-session problem only ever degrades that
   // section — the local list above it is never blocked.
   const [cloud, setCloud] = useState<CloudMachinesInfo | null>(null);
+  // The cloud machines list is not announced yet (owner, 2026-09-30): it exists only on
+  // internal builds (the OPENWORKER_UNSHIPPED switch, as for unshipped coworkers). The
+  // release neither shows it nor asks the cloud for it. Sign-in itself stays: the
+  // one-click connections need it.
+  const [internal, setInternal] = useState(false);
+  useEffect(() => {
+    getPersonasIndex().then((i) => setInternal(i.internal)).catch(() => {});
+  }, []);
   // Managed sandboxes (hosted only): the listing carries the caller's cap,
   // so nothing here depends on the sign-in gate having run.
   const [sandboxes, setSandboxes] = useState<SandboxesInfo>({ sandboxes: [], cap: 0, used: 0 });
@@ -111,15 +120,17 @@ export function MachinesSection() {
       /* sidecar unreachable — keep the last list */
     }
     if (!isCloudMode()) {
-      try {
-        setCloud(await getCloudMachines());
-      } catch {
-        /* keep the last cloud view */
+      if (internal) {
+        try {
+          setCloud(await getCloudMachines());
+        } catch {
+          /* keep the last cloud view */
+        }
       }
     } else {
       setSandboxes(await getSandboxes());
     }
-  }, []);
+  }, [internal]);
 
   useEffect(() => {
     void refresh();
@@ -418,7 +429,7 @@ export function MachinesSection() {
           registry's rows, one pane down. Signed out ⇒ the section does not
           exist; an expired session degrades to a sign-in-again row; the
           local list above is never touched by any of it. */}
-      {!isCloudMode() && cloud && cloud.session !== "signed_out" && (
+      {!isCloudMode() && internal && cloud && cloud.session !== "signed_out" && (
         <div className="mt-7" data-testid="cloud-machines-section">
           <div className="mb-2.5 text-label text-faint font-medium">
             OpenWorker Cloud{cloud.org?.name ? ` · ${cloud.org.name}` : ""}
@@ -766,6 +777,13 @@ function AddMachineCard({
                   <>
                     {t("machines.add.ssh_help")}
                     <div className="font-mono mt-1">{`ssh -N -R ${port}:localhost:${port} user@your-vm`}</div>
+                    {/* OPE-212: the app holds port 8765 so tunnels and joined machines survive a
+                        restart; only when 8765 was taken at start does it sit elsewhere. */}
+                    {joinUrl && port !== "8765" && (
+                      <div className="mt-1 text-warnInk" data-testid="machines-port-note">
+                        {t("machines.add.port_note", { port })}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>

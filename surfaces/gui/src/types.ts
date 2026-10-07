@@ -27,7 +27,12 @@ export type EventType =
   | "compacting"
   | "compacted"
   | "continuation"
-  | "turn_done";
+  | "turn_done"
+  // OPE-206: a socket connect that has to build a sandbox first says so on the socket
+  // itself, so the session view can show "Preparing sandbox…" instead of the app
+  // falling back to its startup screen while the backend was busy.
+  | "sandbox_preparing"
+  | "sandbox_ready";
 
 export interface WsEvent {
   type: EventType;
@@ -46,6 +51,7 @@ export type ApprovalDecision =
   | "always_tool"
   | "always_command"
   | "always_domain"
+  | "always_site"
   | "always_task"
   // OPE-136 §4: durable per-MCP-tool trust — writes a rule to the user-local
   // override store; survives sessions; revocable on the server's detail page.
@@ -147,6 +153,7 @@ export type Item =
   // (ConnectorMessageCard) instead of a plain user bubble. Generalizes to any connector via the
   // registry — no per-connector special-casing.
   | { kind: "connector"; source: MessageSource }
+  | { kind: "teamcreated"; teamId: string; workers: { actor: string; persona: string }[]; ts?: number }
   | { kind: "assistant"; text: string; ts?: number; reasoning?: string }
   // `hidden` = results the user's privacy filters removed before the agent saw them
   // (from the tool message's `_display` sidecar; the agent-visible content has no trace).
@@ -160,6 +167,7 @@ export type Item =
   | { kind: "tool"; id: string; name: string; args: any; status: string; preview?: string; hidden?: number; standingRule?: string; reviewerReason?: string; allowAnyway?: boolean; approvalOrigin?: string; approvalNote?: string; approvalGrant?: string }
   | {
       kind: "approval";
+      toolCallId?: string;
       name: string;
       args: any;
       reason: string;
@@ -170,6 +178,12 @@ export type Item =
       // web_search only (§1.9): the LIVE configured provider name, resolved server-side
       // when the card was raised — the grant description names the actual destination.
       searchProvider?: string;
+      // OPE-219: the host the sandbox's allowed-sites wall stopped. The card says so and
+      // offers "Always allow <host>", which adds it to Settings ▸ Sandbox ▸ allowed sites.
+      siteWall?: string;
+      // OPE-219: the agent asked for sites its commands cannot reach (request_network_access).
+      // `evidence` is false where the sandbox cannot say what it blocked: the card then shows the sites only.
+      networkRequest?: { reason: string; evidence: boolean; hosts: { host: string; blockedSecondsAgo: number | null }[] };
       // OPE-114 §1: set when the action would run a file the agent itself created or
       // downloaded this session ("setup.py was created by the agent 3 steps ago"). The
       // one fact that cannot be read off the command text. Engine-authored, fixed
@@ -178,6 +192,7 @@ export type Item =
       // The Auto-Approve reviewer answered `unsure` and raised this card: its one-line
       // reason, rendered quietly so "why am I being asked?" is answered in place.
       reviewerUnsure?: string;
+      escalation?: import("./components/ApprovalEscalation").Escalation;
       // Server-classified: this shell command only reads locally, so the card may offer
       // the session-wide "Allow read-only commands" grant.
       readonlyOk?: boolean;
@@ -216,15 +231,23 @@ export type Item =
   | {
       // The staffing gate (agent teams): a lead proposes its worker roster.
       kind: "teamreq";
+      title?: string;
+      summary?: string;
+      groups?: import("./proposals").ProposalGroup[];
+      planned_items?: { id: number; title: string; final_acceptance?: { id: number; title: string; owner: "lead" | "assigned_worker" } }[];
+      toolCallId?: string;
       // connectors = the LEAD'S SUGGESTION for this worker (arrives ticked on the card);
       // connector_reasons = why, per suggested connector.
       members: {
         persona: string;
+        group?: string;
+        item_ids?: number[];
         name?: string;
         model?: string;
         reason?: string;
         connectors?: string[];
         connector_reasons?: Record<string, string>;
+        approval_guidance?: string;
         // The model this worker WILL run on if the human changes nothing on the card.
         resolved_model?: string;
         // Set when none of the persona's recommended models can run on this machine.
@@ -260,7 +283,15 @@ export type Item =
   | {
       // The decomposition gate: a lead proposes work items; approval creates them.
       kind: "itemsreq";
-      items: { title: string; criteria: string; description?: string }[];
+      title?: string;
+      summary?: string;
+      targets?: string[];
+      external_actions?: import("./proposals").ExternalActions;
+      activities?: import("./proposals").ProposalGroup[];
+      workstreams?: import("./proposals").ProposalGroup[];
+      final_acceptance?: { item_key: string; owner: "lead" | "assigned_worker" };
+      toolCallId?: string;
+      items: import("./proposals").ProposalTask[];
       note?: string;
       resolved?: "approved" | "rejected";
     }

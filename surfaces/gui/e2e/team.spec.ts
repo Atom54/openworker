@@ -13,6 +13,22 @@ async function proposeTeam(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("teamreq-card")).toBeVisible();
 }
 
+test("a rich proposal keeps its actions and composer reachable in a short window", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  await page.getByPlaceholder(/Ask the coworker/).fill("propose security split");
+  await page.getByRole("button", { name: "Send" }).click();
+  const card = page.getByTestId("itemsreq-card");
+  await card.locator("summary").first().click();
+  const approve = page.getByTestId("itemsreq-approve");
+  await expect(approve).toBeInViewport();
+  await expect(page.getByPlaceholder(/Reply to adjust the proposal/)).toBeInViewport();
+  const bounds = await card.boundingBox();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  await approve.click();
+  await expect(card).toHaveCount(0);
+});
+
 test("the decomposition gate shows items with criteria; approval lands them on the board", async ({
   page,
 }) => {
@@ -22,27 +38,21 @@ test("the decomposition gate shows items with criteria; approval lands them on t
   const card = page.getByTestId("itemsreq-card");
   await expect(card).toBeVisible();
   await expect(card).toContainText("Proposed work items — 4");
-  await expect(card).toContainText("Done when:");
-  // 3 visible + expander with the true remainder
-  await expect(card.getByText("Verification pass")).toHaveCount(0);
-  await card.getByRole("button", { name: /1 more item/ }).click();
+  await expect(card).toContainText("Acceptance criteria");
   await expect(card.getByText("Verification pass")).toBeVisible();
 
   // essay-length criteria clamp behind a per-item expander (owner-hit 2026-08-16)
-  const acToggle = page.getByTestId("itemsreq-ac-toggle-0");
-  await expect(acToggle).toHaveText("Show full criteria");
-  await acToggle.click();
-  await expect(acToggle).toHaveText("Show less");
+  await expect(card).toContainText("inclusive boundaries verified end to end");
   // the short-criteria items get no toggle
   await expect(page.getByTestId("itemsreq-ac-toggle-1")).toHaveCount(0);
 
   await page.getByTestId("itemsreq-approve").click();
   await expect(page.getByText(/Items created on the board/)).toBeVisible();
   // Sections start collapsed (a count chip is the maximum signal) — but the lead's
-  // one-time [Board · N items](board:) chip expands the drawer's Board section.
+  // one-time board chip now opens the Work pane.
   await expect(page.getByTestId("board-rail")).toHaveCount(0);
   await page.getByTestId("board-chip").click();
-  await expect(page.getByTestId("board-rail")).toBeVisible();
+  await expect(page.getByTestId("team-view")).toBeVisible();
 });
 
 test("typing while a gate is pending sends the reply as feedback to the lead", async ({
@@ -67,24 +77,15 @@ test("a team update renders collapsed; expanded it groups by work item with note
   await page.goto("/");
   await page.getByPlaceholder(/Ask the coworker/).fill("board wake");
   await page.getByRole("button", { name: "Send" }).click();
-  const card = page.getByTestId("boardwake-card");
-  await expect(card).toBeVisible();
-  await expect(card).toContainText("Team update");
-  // The summary says what needs action, in words — not a count per event type.
-  await expect(page.getByTestId("boardwake-summary")).toHaveText("#2 is ready for review · 1 more");
-  // collapsed by default: ambient awareness, not reading assignment
-  await expect(page.getByTestId("boardwake-body")).toHaveCount(0);
-  await expect(card).not.toContainText("029f9f7");
-  await page.getByTestId("boardwake-toggle").click();
-  const body = page.getByTestId("boardwake-body");
-  await expect(body).toBeVisible();
-  const review = page.getByTestId("boardwake-group-2");
-  await expect(review).toContainText("#2 Statements page");
-  await expect(review).toContainText("Ready for review");
-  await expect(review).toContainText("webb handed it off for review");
-  // the hand-off note is previewed in place — no click per row
-  await expect(review).toContainText("029f9f7");
-  await expect(page.getByTestId("boardwake-group-5")).toContainText("nia filed it");
+  const line = page.getByTestId("team-update");
+  await expect(line).toBeVisible();
+  await expect(line).toContainText("Team update");
+  await expect(line).not.toHaveAttribute("open");
+  await line.locator("summary").click();
+  await expect(line).toHaveAttribute("open", "");
+  await expect(line).toContainText("Fix refund rounding");
+  await expect(line).toContainText("Add regression coverage");
+  await expect(line).not.toContainText("Sample note");
 });
 
 test("declining the split returns feedback to the lead", async ({ page }) => {
@@ -92,7 +93,9 @@ test("declining the split returns feedback to the lead", async ({ page }) => {
   await page.getByPlaceholder(/Ask the coworker/).fill("propose the split");
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByTestId("itemsreq-card").waitFor();
-  await page.getByRole("button", { name: "Not now" }).click();
+  await page.getByRole("button", { name: "Request changes" }).click();
+  await page.getByLabel("What should change?").fill("Revise the task split");
+  await page.getByRole("button", { name: "Send feedback" }).click();
   await expect(page.getByText(/reworking the split/)).toBeVisible();
 });
 
@@ -113,11 +116,8 @@ test("the staffing gate shows named workers, the chat toggle, and one-line butto
   await expect(card).not.toContainText("Approving grants the lead");
   const approve = card.getByTestId("teamreq-approve");
   await expect(approve).toHaveText("Create team");
-  await expect(approve).toHaveAttribute(
-    "title",
-    /Approving grants the lead create, assign & steer — this team only, revocable\./,
-  );
-  await expect(card.getByRole("button", { name: "Not now" })).toBeVisible();
+  await expect(card).toContainText("does not start these tasks");
+  await expect(card.getByRole("button", { name: "Request changes" })).toBeVisible();
 });
 
 test("enabling chat at the gate adds the # team chat row; posting works with mentions", async ({
@@ -131,7 +131,7 @@ test("enabling chat at the gate adds the # team chat row; posting works with men
   // The chat row lives in the drawer's Team panel now (sessions poll: allow a cycle).
   await expect(page.getByTestId("rail-toggle-team")).toBeVisible({ timeout: 12_000 });
   await page.getByTestId("rail-toggle-team").click();
-  const chatRow = page.getByTestId("team-chat-row");
+  const chatRow = page.getByTestId("team-chat-action");
   await expect(chatRow).toBeVisible();
   await expect(chatRow).toContainText("1"); // unread badge
 
@@ -175,7 +175,9 @@ test("with chat declined at the gate, no chat row renders", async ({ page }) => 
 
 test("declining the roster returns the turn to the lead", async ({ page }) => {
   await proposeTeam(page);
-  await page.getByRole("button", { name: "Not now" }).click();
+  await page.getByRole("button", { name: "Request changes" }).click();
+  await page.getByLabel("What should change?").fill("Revise the roster");
+  await page.getByRole("button", { name: "Send feedback" }).click();
   await expect(page.getByText(/tell me how to change the roster/)).toBeVisible();
   await expect(page.getByTestId("teamreq-card")).toHaveCount(0);
 });
@@ -208,15 +210,20 @@ test("approval creates the team; members live in the drawer, RECENT keeps one en
   await teamToggle.click();
   const panel = page.getByTestId("team-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByTestId("team-row-nia")).toContainText("#1 in progress");
-  await expect(panel.getByTestId("team-row-webb")).toContainText("idle");
-  await expect(panel.getByTestId("team-row-checks")).toContainText("#4 blocked");
+  await expect(panel.getByTestId("team-row-nia")).toContainText("nia");
+  await expect(panel.getByTestId("team-row-webb")).toContainText("Idle");
+  await expect(panel.getByTestId("team-row-checks")).toContainText("Needs attention");
 
-  // A member row is the escape hatch — clicking opens that worker's session, where
-  // the drawer is a plain worker drawer again (Progress back, no Team panel).
+  // Worker inspection keeps the lead alongside; full navigation is explicit.
   await panel.getByTestId("team-row-nia").click();
+  await expect(page.getByTestId("team-view")).toBeVisible();
+  await expect(page.getByTestId("session-title")).toHaveText("Build the statements page");
+  await page.getByRole("button", { name: "Open full session" }).click();
   await expect(page.getByTestId("rail-toggle-progress")).toBeVisible();
   await expect(page.getByTestId("rail-toggle-team")).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to lead" }).click();
+  await expect(page.getByTestId("session-title")).toHaveText("Build the statements page");
+  await expect(page.getByTestId("back-to-lead")).toHaveCount(0);
 });
 
 // Token counting (connectors-across-machines §5): the lead's Team panel rolls the tree
@@ -259,10 +266,7 @@ test("the staffing card carries connector checkboxes and states that approvals f
   await card.getByTestId("teamreq-connector-1-linear").check();
   await expect(card.getByTestId("teamreq-beyond-1")).toContainText("Beyond this worker's usual set");
   await expect(card.getByTestId("teamreq-connector-1-linear")).toBeChecked();
-  await expect(card.getByTestId("teamreq-approve")).toHaveAttribute(
-    "title",
-    /Workers get only the connectors you tick\./,
-  );
+  await expect(card.getByTestId("proposal-connector-summary")).toContainText("GitHub");
   // the approvals line reads the composer's mode…
   // (this build defaults to bypass-approvals, so it starts there)
   await expect(card.getByTestId("teamreq-approvals")).toContainText("Approvals follow the lead's mode: Bypass approvals");
@@ -334,4 +338,3 @@ test("a coworker may ask for a service to be connected; not now is a plain outco
   await page.getByTestId("connreq-decline").click();
   await expect(page.getByText("route that step through myself")).toBeVisible();
 });
-

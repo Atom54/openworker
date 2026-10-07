@@ -220,6 +220,8 @@ test("Settings ▸ GitHub: the default row, a configuration row, Add with a new 
   // The coworker's own models list is offered; the Ollama one is marked not here.
   await expect(dlg.getByTestId("cfg-model-ollama:qwen3-coder:30b")).toContainText("not here");
   await dlg.getByTestId("cfg-base-dir").fill("~/work");
+  await expect(dlg.getByTestId("cfg-worktree")).toHaveCount(0);
+  await expect(dlg).toContainText("no checkout is created automatically");
   // Spec §11.5: Approval mode defaults to Auto-approve and approvals go to the Inbox;
   // both are the user's to change here.
   await expect(dlg.getByTestId("cfg-approval-mode")).toHaveValue("auto-approve");
@@ -229,7 +231,7 @@ test("Settings ▸ GitHub: the default row, a configuration row, Add with a new 
   await dlg.getByTestId("cfg-save").click();
   await expect.poll(() => calls.find((c) => c.method === "POST")?.body).toMatchObject({
     repos: ["acme/site"], event: "pr_open", who: ["nia"],
-    target: { kind: "new", machine_id: "desktop", persona: "security", base_dir: "~/work", worktree: true, models: ["anthropic:claude-opus-4-8"], approval_mode: "interactive", unattended: false },
+    target: { kind: "new", machine_id: "desktop", persona: "security", base_dir: "~/work", models: ["anthropic:claude-opus-4-8"], approval_mode: "interactive", unattended: false },
   });
   await expect(page.getByTestId("cfg-dialog")).toHaveCount(0);
   await expect(page.getByTestId("glance-cfg-cfg2")).toBeVisible();

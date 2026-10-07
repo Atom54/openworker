@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openworker"
-version = "0.2.3"
+version = "0.3.4"
 description = "OpenWorker — an open-source AI coworker you govern. The headless runtime and CLI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -54,15 +54,13 @@ messaging = ["python-telegram-bot>=21", "slack-bolt>=1.18", "aiohttp>=3.9"]
 browser = ["playwright>=1.44"]
 # AWS Bedrock provider (lazy-imported; desktop builds bundle it, pip users opt in).
 bedrock = ["boto3>=1.34"]
+# OpenShell sandbox provider: the runner's stream is a gRPC call to the OpenShell gateway.
+openshell = ["grpcio>=1.60"]
 
+# One command on the path. The server, the connectors tool, the acceptor and the team
+# board stay runnable as modules (`python -m coworker.server.run`, …) for development.
 [project.scripts]
 openworker = "coworker.cli:main"
-openworker-server = "coworker.server.run:main"
-openworker-connectors = "coworker.connectors.cli:main"
-openworker-acceptor = "coworker.remote.service:main"
-# The board as an open surface (OPE-100): `ocw board …` / `ocw journal …`,
-# including `ocw board mcp` — the stdio MCP server external harnesses attach to.
-ocw = "coworker.teams.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -73,6 +71,8 @@ coworker = [
     "personas/builtin/*.md",
     "personas/builtin/*/manifest.md",
     "personas/builtin/*/skills/*/SKILL.md",
+    "headless/*.yaml",
+    "providers/*.json",
 ]
 
 [tool.pytest.ini_options]

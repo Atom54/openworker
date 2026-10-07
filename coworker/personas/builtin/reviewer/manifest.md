@@ -1,5 +1,6 @@
 ---
 id: reviewer
+group: engineering
 name: Reviewer
 icon: shield
 tagline: Reviews a pull request — one summary comment, changes only for real defects

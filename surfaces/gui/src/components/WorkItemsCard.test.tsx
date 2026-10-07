@@ -26,8 +26,9 @@ describe("WorkItemsCard — criteria", () => {
       />,
     );
     const text = screen.getByTestId("itemsreq-card").textContent || "";
-    expect(text.match(/Done when:/g)).toHaveLength(1);
-    expect(text).toContain("Done when: no wait exceeds maxDelayMs");
+    expect(text.match(/Acceptance criteria/g)).toHaveLength(1);
+    expect(text).not.toContain("Done when:");
+    expect(text).toContain("no wait exceeds maxDelayMs");
   });
 
   it("measures the clamp on the stripped text", () => {

@@ -26,6 +26,12 @@ from ..config import EFFORT_LEVELS
 
 _RANK = {level: i for i, level in enumerate(EFFORT_LEVELS)}
 
+# "No thinking, just answer." The auto-title request sends this so a reasoning model does
+# not spend its 64-token cap on hidden reasoning. It is not one of the five user-selectable
+# levels and never goes through the rank table: Anthropic has no such value (the effort
+# field is omitted), and OpenAI-vocabulary endpoints accept it on the wire (#676, #702).
+NO_EFFORT = "none"
+
 
 @dataclass(frozen=True)
 class EffortPlan:
@@ -65,11 +71,18 @@ def validate_level(value: Any, source: str = "reasoning_effort") -> Optional[str
 
 
 def nearest_supported(level: str, supported: Sequence[str]) -> Optional[str]:
-    """The accepted level closest in rank to `level`; ties resolve to the higher one."""
+    """The accepted level closest in rank to `level`; ties resolve to the higher one.
+
+    Levels outside `_RANK` (e.g. "none", an effort value OpenAI-compatible endpoints
+    accept but which is not a ranking level) return None — the caller omits the
+    parameter instead of crashing, since absence of the parameter is valid for
+    OpenAI-compatible endpoints."""
     if not supported:
         return None
     if level in supported:
         return level
+    if level not in _RANK:
+        return None
     target = _RANK[level]
     return min(supported, key=lambda s: (abs(_RANK[s] - target), -_RANK[s]))
 
@@ -116,7 +129,10 @@ def _anthropic_supported(model: str) -> Optional[tuple[str, ...]]:
 def anthropic_effort(model: str, level: str, *, budget_mode: bool) -> EffortPlan:
     """`output_config.effort` on adaptive-thinking models; `thinking.budget_tokens` on
     budget-mode models. Unknown adaptive models get the level as-is (the 400 fallback
-    covers a wrong guess); the mapping is recorded either way."""
+    covers a wrong guess); the mapping is recorded either way. `"none"` has no Anthropic
+    equivalent, so nothing is sent and the API default applies."""
+    if level == NO_EFFORT:
+        return unsupported(level, "Anthropic has no effort value 'none'; no effort parameter sent")
     if budget_mode:
         budget = BUDGET_TOKENS_BY_LEVEL[level]
         return EffortPlan(
@@ -154,9 +170,19 @@ _OPENAI_DEFAULT = ("low", "medium", "high")
 
 def openai_compat_effort(model: str, level: str) -> EffortPlan:
     supported = _OPENAI_COMPAT.get(model) or _OPENAI_COMPAT.get(model.lower()) or _OPENAI_DEFAULT
-    effective = nearest_supported(level, supported)
-    assert effective is not None
     verified = model in _OPENAI_COMPAT or model.lower() in _OPENAI_COMPAT
+    if level == NO_EFFORT:
+        # Send it as-is where the OpenAI vocabulary is assumed (it includes "none"). A
+        # verified row that documents no such value gets its lowest level instead — "none"
+        # ranks below "low", so that is the nearest accepted one, per this module's rule.
+        # A rejection is dropped by the provider's param-fix retry like any other.
+        if verified and NO_EFFORT not in supported:
+            lowest = min(supported, key=_RANK.__getitem__)
+            return EffortPlan(level, lowest, {"reasoning_effort": lowest}, f"{model} has no 'none'; sent its lowest level {lowest}")
+        return EffortPlan(level, level, {"reasoning_effort": level}, "no-thinking request; OpenAI vocabulary assumed")
+    effective = nearest_supported(level, supported)
+    if effective is None:
+        return unsupported(level, f"effort level {level!r} unknown for {model}; no effort parameter sent")
     note = ""
     if effective != level:
         note = f"{level} not accepted by {model}; sent {effective}"

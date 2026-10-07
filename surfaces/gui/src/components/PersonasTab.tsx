@@ -251,7 +251,8 @@ export function PersonasTab({
       ) : null}
       {/* One toggle per row (enable implies picker); ★ marks the default. Everything
           else — in-picker nuance, default, export, delete — lives on the detail page. */}
-      {group(t("personas.group_general"), personas.filter((p) => p.ships !== false && p.group !== "security"))}
+      {group(t("personas.group_general"), personas.filter((p) => p.ships !== false && !["engineering", "security"].includes(p.group || "")))}
+      {group(t("personas.group_engineering"), personas.filter((p) => p.ships !== false && p.group === "engineering"))}
       {group(t("personas.group_security"), personas.filter((p) => p.ships !== false && p.group === "security"))}
 
       {unshipped.length > 0 && (

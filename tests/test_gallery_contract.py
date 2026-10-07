@@ -21,6 +21,7 @@ import pytest
 
 from coworker.server.manager import SessionManager
 from coworker.sessions import SessionRecord
+from proposal_fixtures import work_proposal, team_proposal
 
 CONTRACT = Path(__file__).resolve().parents[1] / "surfaces/gui/src/gallery/states.contract.json"
 OPUS, SONNET = "anthropic:claude-opus-4-8", "anthropic:claude-sonnet-4-8"
@@ -96,6 +97,7 @@ async def test_staffing_card_payload_matches_the_gallery(manager, contract):
         ],
         "note": "Two workers.",
     }
+    args = team_proposal(args["members"])
     task, item = await _parked(manager, approve(args, "t1"), "Create this team?")
     data = item.data or {}
     canonical, states = _inbox_data(card)
@@ -118,6 +120,7 @@ async def test_work_items_payload_matches_the_gallery(manager, contract):
     card = contract["work-items"]
     approve = manager.inbox_items_approver("lead-sid", "swe-lead")
     args = {"items": [{"title": "Cap the backoff", "criteria": "no wait exceeds maxDelayMs", "description": "in retry.ts"}], "note": "one item"}
+    args = work_proposal(args["items"])
     task, item = await _parked(manager, approve(args, "t2"), "Approve the proposed")
     canonical, states = _inbox_data(card)
     problems = _compare("items gate", item.data or {}, canonical, states)
@@ -172,6 +175,9 @@ def test_question_fields_match_the_gallery(contract):
 def test_lead_decision_payload_matches_the_gallery(manager, contract):
     """`decide_worker_call`: the parked approval carries the worker's call the card shows."""
     card = contract["worker-decision"]
+    from coworker.teams.registry import TeamWorker
+    manager.teams.create(space="acme", lead_session="lead-sid", lead_actor="lead",
+        workers=[TeamWorker(actor="nia", persona="swe-worker", session_id="worker-sid")])
     parked = manager.inbox.add_approval(
         "worker-sid", "Run `run_shell`?", body="requires approval\ncommand: npm run build",
         data={"tool": "run_shell", "arguments": {"command": "npm run build"}},

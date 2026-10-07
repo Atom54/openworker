@@ -114,10 +114,15 @@ export function installScenario(scenario: Scenario, onSent: (r: SentRecord) => v
           ...personaIds.filter((id) => id !== "cowork").map((id) => PERSONA(id, id, "teams")),
         ],
       };
+    if (/\/v1\/teams\/[^/]+\/summary$/.test(path)) return scenario.team_summary;
+    if (path.endsWith("/board/item")) {
+      const item = scenario.board?.items.find(i => i.id === Number(query.get("id")));
+      return item ? { ...item, timeline: [{ seq: 1, ts: new Date().toISOString(), kind: "created", actor: "lead" }] } : { error: "not found" };
+    }
     if (path.endsWith("/v1/sessions")) return { sessions: [leadRow, ...workerRows] };
     if (path.endsWith("/v1/machines")) return { machines: [] };
     if (new RegExp(`/v1/sessions/${sid}/messages$`).test(path)) return { messages: scenario.messages };
-    if (/\/v1\/sessions\/[^/]+\/messages$/.test(path)) return { messages: [] };
+    if (/\/v1\/sessions\/[^/]+\/messages$/.test(path)) return { messages: scenario.worker_messages?.[path.split("/").slice(-2)[0]] || [] };
     if (/\/v1\/sessions\/[^/]+\/unattended$/.test(path)) {
       if (method === "POST") unattended = !!body?.unattended;
       return { ok: true, unattended: path.includes(`/${sid}/`) ? unattended : false };
@@ -190,7 +195,7 @@ export function installScenario(scenario: Scenario, onSent: (r: SentRecord) => v
         this.onopen?.(open);
         this.dispatchEvent(open);
         if (!/\/ws\/session\//.test(url)) return;
-        if (!url.includes(`/ws/session/${sid}`)) return this.emit({ type: "ready", data: {} });
+        if (new URL(url).pathname !== `/ws/session/${sid}`) return this.emit({ type: "ready", data: {} });
         // Like the server: `ready` carries the session's model, mode and workspace.
         const { model, mode, workspace } = scenario.session;
         this.emit({ type: "ready", data: { model, mode, workspace: workspace ?? "", temp_workspace: false, running: false } });
@@ -205,7 +210,7 @@ export function installScenario(scenario: Scenario, onSent: (r: SentRecord) => v
     send(data: string) {
       try {
         const msg = JSON.parse(data);
-        if (msg?.type && msg.type !== "ping") record("websocket message", msg);
+        if (msg?.type && msg.type !== "ping") record("websocket " + new URL(this.url).pathname, msg);
       } catch {
         /* not JSON: nothing to show */
       }

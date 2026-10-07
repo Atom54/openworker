@@ -45,6 +45,10 @@ class EventType(str, Enum):
     # OPE-171: the reply was cut off at the output-token limit with no tool call; the
     # engine nudged the model to act and is going round the loop again.
     CONTINUATION = "continuation"
+    # The session's sandbox is being made (its first turn), and is up: the surfaces show
+    # "Preparing the … sandbox" in between.
+    SANDBOX_PREPARING = "sandbox_preparing"
+    SANDBOX_READY = "sandbox_ready"
 
 
 @dataclass

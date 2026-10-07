@@ -816,7 +816,9 @@ def make_integration_tools(
             }
         return path, None
 
-    def github_clone(owner: str, repo: str, directory: str = "") -> dict[str, Any]:
+    def github_clone(owner: str, repo: str, directory: str = "", ref: str = "") -> dict[str, Any]:
+        if ref and (ref.startswith("-") or any(c.isspace() for c in ref) or ":" in ref):
+            return {"error": "ref must be a single branch, tag, commit SHA, or refs/pull/N/head"}
         target, err = _writable_target(directory, default_name=repo)
         if err:
             return err
@@ -838,7 +840,18 @@ def make_integration_tools(
 
             shutil.rmtree(target)
             return {"error": "clone aborted: credentials would have persisted"}
-        head, _ = _run_git(["rev-parse", "--short", "HEAD"], cwd=target)
+        if ref:
+            _out, git_err = _run_git(
+                [*_github_git_auth_args(secrets, owner), "fetch", "origin", ref], cwd=target
+            )
+            if git_err:
+                return {"error": f"clone exists at {target}, but ref fetch failed: {git_err}", "path": str(target)}
+            _out, git_err = _run_git(["checkout", "--detach", "FETCH_HEAD"], cwd=target)
+            if git_err:
+                return {"error": f"clone exists at {target}, but checkout failed: {git_err}", "path": str(target)}
+        head, git_err = _run_git(["rev-parse", "HEAD"], cwd=target)
+        if git_err:
+            return {"error": f"clone has no readable HEAD: {git_err}", "path": str(target)}
         return {"ok": True, "path": str(target), "head": head}
 
     github_clone.__name__ = "github_clone"
@@ -853,6 +866,10 @@ def make_integration_tools(
                 {
                     "owner": {"type": "string"},
                     "repo": {"type": "string"},
+                    "ref": {
+                        "type": "string",
+                        "description": "Optional branch, tag, commit SHA or refs/pull/N/head. Fetches and checks out that revision detached; omitted uses the default branch. Returns full HEAD SHA.",
+                    },
                     "directory": {
                         "type": "string",
                         "description": "absolute target path inside a granted folder (default: <primary>/<repo>)",

@@ -1,7 +1,11 @@
 // `items_proposed` payloads (and the parked `gate: "items"` Inbox item's data).
 import type { CardState } from "../types";
+import { launchProposal, securityProposal, marketingProposal } from "./proposal-examples";
 
 export const workItemsStates: CardState[] = [
+  { id: "launch-plan", title: "Launch plan · eleven tasks", payload: launchProposal },
+  { id: "security-plan", title: "Security · explicit external actions", payload: securityProposal },
+  { id: "marketing-plan", title: "Marketing · publishing undetermined", payload: marketingProposal },
   {
     id: "three-items",
     title: "Three items",

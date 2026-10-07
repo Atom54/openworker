@@ -62,5 +62,5 @@ def test_selfwake_tools(tmp_path):
     assert wake_on_event("alert-fired")["event_key"] == "alert-fired"
 
     pend = store.pending("s1")
-    assert len(pend) == 4
+    assert len(pend) == 3  # the second sleep replaces the first
     assert {w.kind for w in pend} == {"timer", "completion", "event"}

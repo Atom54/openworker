@@ -34,14 +34,14 @@ def test_release_lineup(tmp_path, monkeypatch):
     # Code is listed in Settings but disabled + unsurfaced (the recovery path).
     monkeypatch.delenv("OPENWORKER_UNSHIPPED", raising=False)
     reg = _reg(tmp_path)
-    # 2026-09-04: the Reviewer (a solo PR reviewer for the GitHub configurations) and
-    # the SWE Lead ship too (owner vision: an SWE team on a machine).
+    # 2026-09-04: the Reviewer (a solo PR reviewer for the GitHub configurations) ships
+    # too. The SWE Lead is held back for 0.3.0 (owner, 2026-09-29: not fully tested yet).
     assert [e["name"] for e in reg.sidebar()] == [
-        "cowork", "cloud-posture", "dep-audit", "reviewer", "security", "swe-lead",
+        "cowork", "cloud-posture", "dep-audit", "reviewer", "security",
     ]
     listed = {p["id"]: p for p in reg.list_all()}
     assert set(listed) == {
-        "cowork", "code", "cloud-posture", "dep-audit", "reviewer", "security", "swe-lead",
+        "cowork", "code", "cloud-posture", "dep-audit", "reviewer", "security",
     }
     assert listed["code"]["enabled"] is False and listed["code"]["surfaced"] is False
     assert listed["cloud-posture"]["group"] == "security"

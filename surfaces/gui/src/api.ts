@@ -328,7 +328,7 @@ export interface MessageSource {
   text: string; // the RAW message (what the card shows)
   // Board wakes only (connector === "board"): the digest as structured rows, so
   // the BoardWakeCard renders collapsed summaries instead of re-parsing prose.
-  board?: { rows: BoardWakeRow[] };
+  board?: { rows: BoardWakeRow[]; check_in?: boolean };
 }
 
 // One digest event on a board wake. `note` is a UI-clamped excerpt of a hand-off
@@ -339,6 +339,9 @@ export interface BoardWakeRow {
   title?: string;
   actor?: string;
   to?: string;
+  from?: string;
+  assignee?: string;
+  refs?: string[];
   note?: string;
   // `waiting` only: a worker is waiting on the lead's decision for this tool call.
   tool?: string;
@@ -412,6 +415,10 @@ export interface BoardItem {
   links: { kind: string; item: number }[];
   // Blocked rows only: the latest blocker comment, clamped ("need tfvars…").
   blocker?: string;
+  waiting?: { prompt_id: string; tool: string; preview: string };
+  status?: string;
+  status_ts?: string;
+  created_ts?: string;
 }
 
 export interface Board {
@@ -429,6 +436,14 @@ export interface JournalCase {
 export async function getBoard(sessionId: string): Promise<Board> {
   const res = await fetch(`${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/board`);
   return res.json();
+}
+
+export async function getTeamSummary(sessionId: string, teamId: string): Promise<import("./teamView").TeamSummary> {
+  const res = await fetch(`${sessionApiBase(sessionId)}/v1/teams/${encodeURIComponent(teamId)}/summary`);
+  if (!res.ok) throw new Error("Team summary unavailable");
+  const data = await res.json();
+  if (!Array.isArray(data.items) || !Array.isArray(data.workers) || !data.lead || !data.totals || !data.counts) throw new Error("Team summary unavailable");
+  return data;
 }
 
 // One event in an item's merged timeline (the detail pane renders the item's
@@ -628,6 +643,28 @@ export async function removeRoot(
   const q = new URLSearchParams({ path });
   const res = await fetch(
     `${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/roots?${q.toString()}`,
+    { method: "DELETE" },
+  );
+  return res.json();
+}
+
+// -- the session's allowed sites (OPE-219) -------------------------------------
+// The answer carries the session's sandbox as the header chip shows it.
+type SitesAnswer = { ok: boolean; error?: string; sandbox?: any };
+
+export async function allowSessionSite(sessionId: string, host: string): Promise<SitesAnswer> {
+  const res = await fetch(`${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/sites`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host }),
+  });
+  return res.json();
+}
+
+export async function removeSessionSite(sessionId: string, host: string): Promise<SitesAnswer> {
+  const q = new URLSearchParams({ host });
+  const res = await fetch(
+    `${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/sites?${q.toString()}`,
     { method: "DELETE" },
   );
   return res.json();
@@ -946,7 +983,7 @@ export async function cloudLogout(): Promise<{ ok: boolean }> {
 
 export async function connectManaged(
   name: string,
-  options?: { access?: "read" | "write" },
+  options?: { access?: "read" | "write"; flow?: "install" },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(
     `${httpBase()}/v1/connectors/${encodeURIComponent(name)}/connect-managed`,
@@ -954,10 +991,11 @@ export async function connectManaged(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // `access` names a broker-defined consent tier (hubspot read | write).
-      // GitHub needs no flow choice: the broker is authorize-first — one connect
-      // links an existing App installation or redirects on to the install page.
+      // Normal connect links existing grants; explicit Add installation opens
+      // GitHub's account/repository consent picker even when grants already exist.
       body: JSON.stringify({
         ...(options?.access ? { access: options.access } : {}),
+        ...(name === "github" && options?.flow ? { flow: options.flow } : {}),
       }),
     },
   );
@@ -1201,6 +1239,8 @@ export interface ModelSettings {
   auto_approve_shadow?: boolean;
   // Curated-matrix display names ({full id → "GLM-5.2 · via Together"}); custom models absent.
   model_labels?: Record<string, string>;
+  // Per-model settings the user saved (model_config.json), keyed by model id.
+  model_config?: Record<string, ModelConfigRecord>;
   // {full id → context window in tokens}, verified matrix entries only — drives the
   // composer's context-fill meter (absent id → the meter hides). Optional for older backends.
   model_context_windows?: Record<string, number>;
@@ -1424,6 +1464,7 @@ export interface TeamMemberDecision {
   persona: string;
   name?: string;
   connectors: string[];
+  approval_guidance?: string;
   // The human's FINAL model choice for this worker — sent only when the gate offered
   // a model picker (the server supplied `runnable_models`).
   model?: string;
@@ -1879,6 +1920,7 @@ export async function setSessionSkill(
 // -- Inbox + Unattended -------------------------------------------------------
 export interface InboxItem {
   id: string;
+  tool_call_id?: string;
   session_id: string;
   kind: "approval" | "question" | "notification" | "directory" | "plan" | "tool" | "connector";
   title: string;
@@ -2109,11 +2151,41 @@ export async function unsubscribeChannel(
   return res.json();
 }
 
+// Who answers when the agent asks (server: coworker/unattended.py). "attended" = inline,
+// "inbox" = parked in the Inbox until someone returns, "auto" = the engine answers by
+// fixed rule and refuses anything only a person could approve.
+export type Attendance = "attended" | "inbox" | "auto";
+
 export async function getUnattended(sessionId: string): Promise<boolean> {
   const res = await fetch(
     `${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/unattended`,
   );
   return (await res.json()).unattended;
+}
+
+export async function getAttendance(sessionId: string): Promise<Attendance> {
+  const res = await fetch(
+    `${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/unattended`,
+  );
+  const body = await res.json();
+  const value = body.attendance;
+  if (value === "inbox" || value === "auto") return value;
+  return body.unattended ? "inbox" : "attended";
+}
+
+export async function setAttendance(
+  sessionId: string,
+  attendance: Attendance,
+): Promise<{ ok: boolean; unattended: boolean; attendance: Attendance }> {
+  const res = await fetch(
+    `${sessionApiBase(sessionId)}/v1/sessions/${encodeURIComponent(sessionId)}/unattended`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attendance }),
+    },
+  );
+  return res.json();
 }
 
 export async function setUnattended(
@@ -2151,6 +2223,135 @@ export interface ReviewerStats {
 
 export async function getReviewerStats(sessionId: string): Promise<ReviewerStats> {
   const res = await fetch(`${sessionApiBase(sessionId)}/v1/sessions/${sessionId}/reviewer-stats`);
+  return res.json();
+}
+
+// -- Settings ▸ Sandbox (UX-051 A): machine-level provider, network profile, credential grants --
+export interface SandboxCredentialEntry {
+  name: string;
+  title?: string;
+  path?: string; // a file or a folder under the home folder
+  hosts?: string[];
+  does?: string;
+  label?: "credential" | "configuration"; // what is in it
+  enabled: boolean;
+  kind?: "file" | "folder" | ""; // display only: what the path is on this machine ("" = missing)
+  shipped?: boolean; // display only: in the default list
+}
+// UX-053: the Windows one-time setup, as the page sees it (null off Windows).
+export interface WindowsSetupInfo {
+  state: "not_set_up" | "older" | "broken" | "ready";
+  set_up_at: string; // ISO date, "" when unknown
+  problem: string;
+  can_elevate: boolean; // this user can answer the administrator prompt
+  command: string; // to hand to an administrator
+}
+export interface SandboxToolchainEntry {
+  name: string;
+  title?: string;
+  path: string;
+  enabled: boolean;
+  exists?: boolean; // on this machine
+  shipped?: boolean; // in the default list (cannot be removed, only switched off)
+}
+export interface SandboxSettings {
+  platform: string;
+  provider: string; // "" = the default rule
+  effective_provider: string;
+  refused: string;
+  // `state` is what the page shows next to a provider. "needs_download": OpenShell is in
+  // place except for the base image (about 5 GB, pulled once); the radio stays enabled.
+  providers: { name: string; usable: boolean; why: string; state?: "ready" | "needs_download" | "unavailable" }[];
+  windows_setup: WindowsSetupInfo | null;
+  network_profile: string; // "allowlist" | "open"
+  network_profiles: { name: string }[];
+  network_sites: { group: string; hosts: string[] }[]; // the catalogue the sites dialog offers, "host:port"
+  network_hosts: string[]; // the sites the machine ticked, "host:port"; empty until it ticks some
+  credentials: SandboxCredentialEntry[]; // only the entries the user added (UX-053 v5)
+  credential_presets: SandboxCredentialEntry[]; // the "A CLI's login" picker: shipped, not yet added
+  toolchains: SandboxToolchainEntry[];
+  config_path: string;
+}
+
+export async function getSandboxSettings(machineId?: string | null): Promise<SandboxSettings> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox`);
+  return res.json();
+}
+
+export async function setSandboxSettings(
+  patch: Partial<Pick<SandboxSettings, "provider" | "network_profile" | "network_hosts" | "credentials" | "toolchains">>,
+  machineId?: string | null,
+): Promise<{ ok: boolean; error?: string; rebuilt_sessions?: string[] } & Partial<SandboxSettings>> {
+  // `rebuilt_sessions`: after a provider change, the sessions whose engine the server
+  // dropped so their next connection rebuilds them under the new rule.
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return res.json();
+}
+
+// OPE-207: the readiness checklist behind Settings ▸ Sandbox (the rows `openworker machine
+// sandbox status` prints, with a key and whether the app may fix each one itself), and
+// the guided setup job that walks it on the machine where sessions run.
+export interface SandboxReadinessStep {
+  key: string;
+  what: string;
+  ok: boolean;
+  hint: string; // a note (what was found, why it failed); never a command
+  fixable: boolean; // the setup job does this one itself on that machine
+  command: string; // what to run in a terminal there when the app cannot
+  docs: string; // a page explaining the requirement, or ""
+}
+export interface SandboxReadiness {
+  platform: string;
+  supported: boolean;
+  steps: SandboxReadinessStep[];
+  all_ok: boolean;
+}
+export type SandboxSetupRowState = "pending" | "fixing" | "fixed" | "ok" | "needs_you" | "failed";
+export interface SandboxSetupState {
+  status: "idle" | "running" | "done" | "needs_you" | "failed" | "cancelled";
+  rows: (SandboxReadinessStep & { state: SandboxSetupRowState })[];
+  progress: { layers_total: number; layers_done: number; last_line: string; elapsed_s: number } | null;
+  error: string;
+  elapsed_s: number;
+}
+
+export async function getSandboxReadiness(machineId?: string | null): Promise<SandboxReadiness> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/readiness`);
+  return res.json();
+}
+
+export async function getSandboxSetup(machineId?: string | null): Promise<SandboxSetupState> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/setup`);
+  return res.json();
+}
+
+export async function startSandboxSetup(machineId?: string | null): Promise<SandboxSetupState> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/setup`, { method: "POST" });
+  return res.json();
+}
+
+export async function cancelSandboxSetup(machineId?: string | null): Promise<SandboxSetupState> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/setup/cancel`, { method: "POST" });
+  return res.json();
+}
+
+// UX-053: "Set up now" in the Windows setup dialog. The server runs the elevated setup
+// (Windows shows its own prompt), proves the wall in a throwaway sandbox, and makes the
+// Windows sandbox the machine's choice. Blocks until Windows answers, unlike the OpenShell
+// setup job above, which is polled.
+export async function runSandboxSetup(
+  machineId?: string | null,
+): Promise<{ ok: boolean; error?: string; said?: string; checked?: string } & Partial<SandboxSettings>> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/windows/setup`, { method: "POST" });
+  return res.json();
+}
+
+export async function runSandboxRemove(machineId?: string | null): Promise<{ ok: boolean; error?: string; said?: string } & Partial<SandboxSettings>> {
+  const res = await fetch(`${engineBase(machineId)}/v1/settings/sandbox/windows/remove`, { method: "POST" });
   return res.json();
 }
 
@@ -2304,6 +2505,11 @@ export interface ProviderInfo {
   last_used_at?: number | null; // epoch secs the provider last served a completion
   // OAuth providers (auth === "oauth"): browser sign-in instead of a key form.
   auth?: string | null;
+  // How Models & Keys groups it: a server on the user's own hardware, a plan signed
+  // into, or an API key. Absent on an older backend → treated as an API key.
+  kind?: "local" | "subscription" | "api_key";
+  // Local servers only: whether the server answers right now (cached probe).
+  alive?: boolean;
   signed_in?: boolean;
   account?: string | null; // signed-in account label (email or id)
   authorizing?: boolean;
@@ -2311,6 +2517,25 @@ export interface ProviderInfo {
 }
 
 // -- ChatGPT-subscription provider sign-in (OAuth; tokens never reach the GUI) ------
+export interface OpenRouterAuthStatus {
+  connected: boolean;
+  authorizing: boolean;
+  attempt_id: string | null;
+  authorize_url: string | null;
+  error: string | null;
+}
+
+export async function openRouterAuth(
+  action: "status" | "signin" | "complete" | "cancel" | "disconnect",
+  body: Record<string, unknown> = {},
+): Promise<OpenRouterAuthStatus> {
+  const response = await fetch(`${httpBase()}/v1/providers/openrouter-account/${action}`, action === "status" ? undefined : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error("OpenRouter authentication request failed");
+  return response.json();
+}
+
 export interface CodexAuthStatus {
   signed_in: boolean;
   account?: string | null;
@@ -2331,6 +2556,154 @@ export async function codexAuthStatus(): Promise<CodexAuthStatus> {
 
 export async function codexSignout(): Promise<{ ok: boolean }> {
   const res = await fetch(`${httpBase()}/v1/providers/openai-codex/signout`, { method: "POST" });
+  return res.json();
+}
+
+// -- per-model settings, the machine, and what local servers hold ----------------------
+
+export interface ModelConfigRecord {
+  context_size?: number;
+  max_output_tokens?: number;
+  thinking?: boolean;
+  reasoning_effort?: string;
+  temperature?: number;
+  top_p?: number;
+  compaction_threshold_pct?: number;
+  default?: boolean;
+}
+
+export interface ModelSettingValue {
+  value: number | boolean | string;
+  from: "user" | "recommended";
+}
+
+export interface ModelRecommendation {
+  name: string;
+  context_max: number | null;
+  context_for_agents: number | null;
+  max_output_tokens: number | null;
+  thinking: { available: boolean; default: boolean };
+  sampling: Record<string, number>;
+  notes: string;
+  source: string;
+}
+
+/** One model's settings in force, each with where it came from. */
+export interface ModelConfigView {
+  model: string;
+  context_size?: ModelSettingValue;
+  max_output_tokens?: ModelSettingValue;
+  thinking?: ModelSettingValue;
+  reasoning_effort?: ModelSettingValue;
+  temperature?: ModelSettingValue;
+  top_p?: ModelSettingValue;
+  compaction_threshold_pct?: ModelSettingValue;
+  default: ModelSettingValue;
+  recommendation?: ModelRecommendation;
+}
+
+export async function getModelConfig(model: string): Promise<ModelConfigView> {
+  const res = await fetch(`${httpBase()}/v1/settings/model-config?model=${encodeURIComponent(model)}`);
+  return res.json();
+}
+
+export async function setModelConfig(
+  model: string,
+  values: Partial<Record<keyof ModelConfigRecord, number | boolean | string | null>>,
+): Promise<ModelConfigView & { ok: boolean; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/settings/model-config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, values }),
+  });
+  return res.json();
+}
+
+export async function removeModelConfig(model: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${httpBase()}/v1/settings/model-config/remove`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  return res.json();
+}
+
+/** This session's thinking switch and effort level (UX-055, the ⚙ beside the model). */
+// UX-056: what a model lets the user set per session (providers/model_controls.py).
+export interface ModelControls {
+  thinking: { support: "supported" | "not_supported"; default?: boolean | null };
+  reasoning: { support: "supported" | "not_supported"; levels?: string[]; default?: string | null };
+}
+
+export interface SessionModelControls {
+  // What this session changed; null = the model's default.
+  thinking: boolean | null;
+  reasoning_effort: string | null;
+  controls: ModelControls;
+}
+
+export async function getSessionModelSettings(sessionId: string, model = ""): Promise<SessionModelControls> {
+  const q = model ? `?model=${encodeURIComponent(model)}` : "";
+  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/model-settings${q}`);
+  return res.json();
+}
+
+export async function setSessionModelSettings(
+  sessionId: string,
+  values: { thinking?: boolean | null; reasoning_effort?: string | null },
+): Promise<{ ok: boolean; error?: string } & Partial<SessionModelControls>> {
+  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/model-settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  return res.json();
+}
+
+/** This machine, for the "Your system" section. */
+export interface SystemFacts {
+  processor: string;
+  graphics: string;
+  kind: "apple_silicon" | "nvidia" | "dgx_spark" | "jetson" | "cpu";
+  memory_bytes: number | null;
+  gpu_memory_bytes: number | null;
+  storage_free_bytes: number | null;
+  storage_total_bytes: number | null;
+  model_memory_bytes: number | null;
+  runs_well_up_to_bytes: number | null;
+}
+
+export async function getSystemFacts(): Promise<SystemFacts> {
+  const res = await fetch(`${httpBase()}/v1/system`);
+  return res.json();
+}
+
+/** One model a local server holds, as the settings table shows it. */
+export interface LocalModelRow {
+  model: string; // full id, e.g. ollama:qwen3-coder:30b
+  name: string;
+  size_bytes: number | null;
+  tools: boolean | null; // null: the server did not say
+  thinking: boolean | null;
+  vision: boolean | null;
+  remote: boolean;
+  parameter_size: string | null;
+  quantization: string | null;
+  context_max: number | null;
+  context: number | null;
+  context_from: "user" | "machine" | "server";
+  fit: "runs_well" | "tight" | "too_large" | "cloud" | "unknown";
+  recommendation: string | null;
+}
+
+export async function getLocalModels(
+  provider: string,
+): Promise<{ provider: string; models: LocalModelRow[]; alive?: boolean; error?: string }> {
+  // A stuck request must end in an error the page can show, never an endless blank.
+  const res = await fetch(`${httpBase()}/v1/providers/${encodeURIComponent(provider)}/models`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
@@ -2833,7 +3206,14 @@ export type Handlers = {
    * should reload what it may have missed (transcript tail, parked prompts). */
   onOpen?: (reconnected: boolean) => void;
   onClose?: () => void;
+  /** The server refused to build this session (its sandbox cannot be used) and closed
+   * the socket for good (close code 4403). No reconnect follows: retrying would only
+   * repeat the refusal every few seconds. The reason arrived as an `error` event. */
+  onRefused?: () => void;
 };
+
+/** Close code the server uses for a session it refused to build (see app.py). */
+export const WS_CLOSE_SESSION_REFUSED = 4403;
 
 /** Reconnect backoff for a dropped session socket: 1s, 2s, 4s, 8s, then 15s. */
 export const SESSION_RECONNECT_MS = [1000, 2000, 4000, 8000, 15000];
@@ -2888,9 +3268,14 @@ export class Session {
       this.flush();
       this.handlers.onOpen?.(reconnected);
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       this.handlers.onClose?.();
       if (this.closed) return;
+      if (ev.code === WS_CLOSE_SESSION_REFUSED) {
+        this.closed = true; // final: the server said this session cannot be built as configured
+        this.handlers.onRefused?.();
+        return;
+      }
       const delay = SESSION_RECONNECT_MS[Math.min(this.attempts, SESSION_RECONNECT_MS.length - 1)];
       this.attempts += 1;
       this.timer = window.setTimeout(() => this.connect(), delay);

@@ -27,19 +27,15 @@ A few things are true by design, before any setup:
 
 ## 1. Install on the machine
 
-On the remote machine:
+On the remote machine (Linux or a Mac):
 
 ```bash
-sudo apt update && sudo apt install -y git curl python3-venv python3-pip
-python3 -m venv ~/ow-venv
-~/ow-venv/bin/pip install "git+https://github.com/andrewyng/openworker.git"
+curl -fsSL https://openworker.com/install.sh | sh
 ```
 
-Optional but recommended, so `openworker` is on your PATH:
-
-```bash
-echo 'export PATH=$HOME/ow-venv/bin:$PATH' >> ~/.bashrc && source ~/.bashrc
-```
+This downloads the `openworker` program for the machine into `~/.local/share/openworker`
+and links it into `~/.local/bin`. No Python is needed. The script tells you if
+`~/.local/bin` is not on your PATH yet.
 
 Check it:
 
@@ -51,8 +47,9 @@ You should see `controller: not joined` — a fresh, unenrolled machine.
 
 ## Reachability: how the machine finds your desktop
 
-The machine connects to your desktop app's local server (port 8765). Your
-desktop binds to localhost only, so pick one of these:
+The machine connects to your desktop app's local server on port 8765. (If 8765
+is taken when the app starts, it uses another port and the Add a machine card
+shows it.) Your desktop binds to localhost only, so pick one of these:
 
 **Option A — Tailscale (recommended).** Install [Tailscale](https://tailscale.com)
 on both computers. In the desktop app, enable listening on the tailnet

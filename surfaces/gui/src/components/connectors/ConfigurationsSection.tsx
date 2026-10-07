@@ -99,7 +99,7 @@ export function ConfigurationsSection({
       tg.persona || t("connconfig.default_coworker_lower"),
       ...(tg.models?.[0] ? [shortModel(tg.models[0])] : []),
       where,
-      ...(tg.base_dir ? [t(tg.worktree === false ? "connconfig.target_in_dir" : "connconfig.target_worktree_under", { dir: tg.base_dir })] : []),
+      ...(tg.base_dir ? [t("connconfig.target_session_under", { dir: tg.base_dir })] : []),
       tg.unattended === false ? mode : t("connconfig.target_mode_to_inbox", { mode }),
     ].join(" · ");
   };
@@ -235,7 +235,6 @@ function ConfigurationDialog({
   const [persona, setPersona] = useState(cfg?.target.persona ?? "");
   const [models, setModels] = useState<string[]>(cfg?.target.models ?? []);
   const [baseDir, setBaseDir] = useState(cfg?.target.base_dir ?? "");
-  const [worktree, setWorktree] = useState(cfg?.target.worktree ?? true);
   // Spec §11.5 (owner rulings): Approval mode defaults to Auto-approve; "Send approvals to
   // Inbox" (the Unattended dial) defaults on — nobody is at the keyboard for these sessions.
   const [approvalMode, setApprovalMode] = useState(cfg?.target.approval_mode ?? "auto-approve");
@@ -303,7 +302,7 @@ function ConfigurationDialog({
   const target = (): ConfigurationTarget =>
     kind === "existing"
       ? { kind: "existing", machine_id: machineId, session_id: sessionId, title: sessionTitle }
-      : { kind: "new", machine_id: machineId, persona, models, base_dir: baseDir.trim(), worktree, skills, instructions: instructions.trim(), board: board.trim(), memory: memory.trim(), approval_mode: approvalMode, unattended };
+      : { kind: "new", machine_id: machineId, persona, models, base_dir: baseDir.trim(), skills, instructions: instructions.trim(), board: board.trim(), memory: memory.trim(), approval_mode: approvalMode, unattended };
 
   const save = async () => {
     setErr(null);
@@ -478,15 +477,7 @@ function ConfigurationDialog({
               <Label>{t("connconfig.label_base_dir")}</Label>
               <div>
                 <input className={INPUT + " w-full"} value={baseDir} onChange={(e) => setBaseDir(e.target.value)} placeholder={t("connconfig.base_dir_placeholder", { machine: machine?.name ?? t("connconfig.the_machine") })} data-testid="cfg-base-dir" />
-                <label className="flex items-start gap-2 mt-2 text-ui">
-                  <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} data-testid="cfg-worktree" className="mt-1" />
-                  <span>
-                    {t("connconfig.worktree_per_session")}
-                    <span className="block text-meta text-faint">
-                      {t("connconfig.worktree_hint", { dir: baseDir || "~/work" })}
-                    </span>
-                  </span>
-                </label>
+                <div className="mt-2 text-meta text-faint">{t("connconfig.session_directory_hint")}</div>
               </div>
 
               <Label>{t("connconfig.label_approvals")}</Label>

@@ -52,3 +52,5 @@ Craft standards (these outrank speed):
   hand-off includes a Coverage note.
 - Never print cloud credentials or full account identifiers in output.
 - NEVER inline multi-line scripts in shell commands: write a file, then run it.
+
+At a meaningful step change, use set_status(item, text) to show one short progress line (at most 80 characters) on your assigned item. Include the explicit item id; this is display-only, never a substitute for blockers, evidence or the review hand-off. Do not post heartbeats.

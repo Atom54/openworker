@@ -39,12 +39,14 @@ export const inboxItemBuilders: Partial<Record<string, (s: CardState<any>) => In
       "plan",
       "Approve the proposed work items?",
       (p.items || []).map((i: any) => `- ${i.title}`).join("\n"),
-      { gate: "items", items: p.items || [], note: p.note || "" },
+      { gate: "items", ...p },
     ),
   approval: ({ payload: p, context }) =>
     parked("approval", `Run \`${p.name}\`?`, p.reason || "", {
       tool: p.name,
       arguments: p.arguments || {},
+      escalation: p.escalation || null,
+      provenance: p.provenance || "",
       ...(context?.runTask ? { task_id: context.runTask.id, task_title: context.runTask.title } : {}),
       ...(context?.runTask && p.standing_target ? { standing_target: p.standing_target } : {}),
     }),
@@ -54,7 +56,7 @@ export const inboxItemBuilders: Partial<Record<string, (s: CardState<any>) => In
       "approval",
       `Run \`${p.name}\`?`,
       `requires approval\nworker: ${p.arguments.worker} · call_id: ${p.arguments.call_id} · decision: ${p.arguments.decision}`,
-      { tool: p.name, arguments: p.arguments, ...(p.worker_call ? { worker_call: p.worker_call } : {}) },
+      { tool: p.name, arguments: p.arguments, escalation: p.escalation || null, provenance: p.provenance || "", ...(p.worker_call ? { worker_call: p.worker_call, worker_prompt_id: p.arguments?.call_id } : {}) },
     ),
   "connector-request": ({ payload: p }) =>
     parked(

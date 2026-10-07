@@ -173,19 +173,67 @@ def test_openai_compat_mapping(model, level, effective, noted):
     assert plan.params == {"reasoning_effort": effective}
     assert bool(plan.note) == noted
 
+def test_nearest_supported_unknown_level_returns_none():
+    """Levels outside _RANK (e.g. "none") must not raise — see #676."""
+    assert nearest_supported("none", ("low", "medium", "high")) is None
+
+
+def test_openai_compat_none_is_sent_where_openai_vocabulary_is_assumed():
+    """The auto-title request asks for "none" (no thinking). Unlisted model ids (Ollama,
+    any OpenAI-compatible endpoint) get the OpenAI vocabulary, which includes "none", so it
+    goes on the wire as-is — omitting it would let a reasoning model spend the 64-token
+    title cap on hidden thinking (#702)."""
+    plan = openai_compat_effort("ollama:glm-5.3:cloud", "none")
+    assert plan.effective == "none"
+    assert plan.params == {"reasoning_effort": "none"}
+    assert "no-thinking" in plan.note
+
+
+def test_openai_compat_none_maps_to_the_lowest_level_on_a_verified_row_without_it():
+    """Kimi K3 documents low/high/max only. "none" ranks below "low", so the nearest
+    accepted level is "low" — the least thinking the model offers (#702)."""
+    plan = openai_compat_effort("moonshotai/Kimi-K3", "none")
+    assert plan.effective == "low"
+    assert plan.params == {"reasoning_effort": "low"}
+    assert "sent its lowest level low" in plan.note
+
+
+def test_openai_compat_other_unknown_level_sends_no_parameter():
+    """Any other value outside the rank table still omits the parameter rather than raise."""
+    plan = openai_compat_effort("ollama:glm-5.3:cloud", "turbo")
+    assert plan.effective is None and plan.params == {} and "unknown" in plan.note
+
+
+@pytest.mark.parametrize(
+    "model, budget",
+    [("claude-sonnet-5", False), ("claude-opus-4-5", False), ("claude-unknown-9", False), ("claude-3-7-sonnet", True)],
+)
+def test_anthropic_none_sends_nothing(model, budget):
+    """Anthropic has no "none" value: adaptive, budget-thinking and unknown models all
+    omit the effort field instead of raising (#702)."""
+    plan = anthropic_effort(model, "none", budget_mode=budget)
+    assert plan.requested == "none" and plan.effective is None and plan.params == {}
+    assert "no effort parameter sent" in plan.note
+
+
 
 def test_every_curated_model_resolves_every_level():
-    """No level on any curated row may raise; providers without a knob are simply skipped."""
+    """No level on any curated row may raise, and neither may the auto-title's "none";
+    providers without a knob are simply skipped."""
     for mid in MATRIX:
         provider, _, bare = mid.partition(":") if ":" in mid else ("openai", "", mid)
-        for level in EFFORT_LEVELS:
+        for level in (*EFFORT_LEVELS, "none"):
             if provider == "anthropic":
                 plan = anthropic_effort(bare, level, budget_mode=_uses_budget_thinking(bare))
             elif provider in ("gemini", "bedrock", "vertex", "ark", "ark-agent-plan-cn", "openai-codex", "openai"):
                 continue  # no chat-completions effort knob on these paths (recorded as such)
             else:
                 plan = openai_compat_effort(bare, level)
-            assert plan.requested == level and plan.effective in EFFORT_LEVELS, (mid, level)
+            assert plan.requested == level, (mid, level)
+            if level == "none":
+                assert plan.effective in (None, "none", "low"), (mid, level)
+            else:
+                assert plan.effective in EFFORT_LEVELS, (mid, level)
 
 
 # -- Anthropic provider ---------------------------------------------------------------
@@ -237,6 +285,17 @@ def test_anthropic_unset_sends_no_effort_field():
     turn = AnthropicProvider(client=fake).complete(model="claude-sonnet-5", messages=[{"role": "user", "content": "x"}])
     assert "output_config" not in fake.kwargs and "reasoning_effort" not in fake.kwargs
     assert turn.effort is None
+
+
+def test_anthropic_none_sends_no_effort_field_and_records_it():
+    """The auto-title's "none" must not raise on the Anthropic path (#702): nothing is
+    sent, and the reply records that nothing was sent."""
+    fake = _FakeAnthropic(response=_anthropic_response())
+    turn = AnthropicProvider(client=fake).complete(
+        model="claude-sonnet-5", messages=[{"role": "user", "content": "x"}], reasoning_effort="none"
+    )
+    assert "output_config" not in fake.kwargs and "thinking" not in fake.kwargs
+    assert turn.effort["requested"] == "none" and turn.effort["effective"] is None
 
 
 def test_anthropic_complete_and_stream_send_output_config():
@@ -338,6 +397,25 @@ def test_openai_compat_rejection_drops_the_parameter_and_records_it():
     assert turn.effort["effective"] is None and "rejected" in turn.effort["note"]
     provider.complete(model="some/other-model", messages=[{"role": "user", "content": "y"}], reasoning_effort="high")
     assert len(fake.calls) == 3 and "reasoning_effort" not in fake.calls[-1]
+
+
+def test_openai_compat_none_goes_on_the_wire_for_unlisted_models():
+    fake = _FakeOpenAI(response=_openai_response())
+    turn = OpenAIProvider(client=fake).complete(model="ollama:glm-5.3:cloud", messages=[{"role": "user", "content": "x"}], reasoning_effort="none")
+    assert fake.calls[-1]["reasoning_effort"] == "none"
+    assert turn.effort == {"requested": "none", "effective": "none", "param": {"reasoning_effort": "none"}, "note": "no-thinking request; OpenAI vocabulary assumed"}
+
+
+def test_openai_compat_rejected_none_is_dropped_but_not_remembered():
+    """An endpoint that rejects "none" gets the retry without it, like any other rejected
+    value — but that rejection must not stop the real levels from being sent afterwards."""
+    fake = _FakeOpenAI(response=_openai_response(), reject_effort=True)
+    provider = OpenAIProvider(client=fake)
+    turn = provider.complete(model="some/other-model", messages=[{"role": "user", "content": "x"}], reasoning_effort="none")
+    assert len(fake.calls) == 2 and "reasoning_effort" not in fake.calls[-1]
+    assert turn.effort["effective"] is None and "rejected" in turn.effort["note"]
+    provider.complete(model="some/other-model", messages=[{"role": "user", "content": "y"}], reasoning_effort="high")
+    assert fake.calls[2]["reasoning_effort"] == "high"  # still attempted, not pre-emptively skipped
 
 
 # -- engine record --------------------------------------------------------------------

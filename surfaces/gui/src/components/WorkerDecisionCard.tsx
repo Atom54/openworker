@@ -9,12 +9,15 @@
 // An older server sends none: the card still explains the decision and says the call
 // itself cannot be shown.
 import type { ReactNode } from "react";
+import { ApprovalEscalation, type Escalation } from "./ApprovalEscalation";
 import { getI18n, Trans, useTranslation } from "react-i18next";
 import { humanizeApprovalTitle } from "../humanize";
 import { PreviewBlock, TitleText } from "./ApprovalCard";
 import { Icon } from "./Icon";
 
 export interface WorkerCall {
+  item_id?: number;
+  item_title?: string;
   worker?: string;
   tool: string;
   arguments?: any;
@@ -51,9 +54,30 @@ function nounFor(tool?: string): Noun {
   return "action";
 }
 
+// Older/current servers include an argument preview in the parked prompt body.
+// For shell calls the title + command block already show those same two fields.
+// Remove only that exact generated line, retaining distinct policy explanations.
+function distinctWorkerReason(call?: WorkerCall | null): string {
+  const reason = call?.reason || "";
+  const args = call?.arguments || {};
+  const shorten = (text: string, limit: number) => {
+    const chars = Array.from(text);
+    return chars.length > limit ? chars.slice(0, limit - 1).join("") + "…" : text;
+  };
+  const summary = call?.tool === "run_shell" && typeof args.command === "string"
+    && Object.keys(args).every(k => k === "command" || k === "description")
+    ? shorten(Object.entries(args).map(([key, value]) =>
+      `${key}: ${shorten(String(value).trim().replace(/\s+/g, " "), 80)}`,
+    ).join(" · "), 240) : "";
+  return reason.split("\n").filter(line => line.trim() !== "requires approval"
+    && (!summary || line.trim() !== summary)).join("\n").trim();
+}
+
 export function WorkerDecisionCard({
   decision,
   workerCall,
+  escalation,
+  reviewerUnsure,
   onFollow,
   onOverride,
   compact = false,
@@ -62,6 +86,8 @@ export function WorkerDecisionCard({
 }: {
   decision: LeadDecision;
   workerCall?: WorkerCall | null;
+  escalation?: Escalation;
+  reviewerUnsure?: string;
   // Do what the lead decided / do the opposite. Both answer the worker's call.
   onFollow: () => void;
   onOverride: () => void;
@@ -78,6 +104,7 @@ export function WorkerDecisionCard({
   const args = workerCall?.arguments && typeof workerCall.arguments === "object" ? workerCall.arguments : {};
   const preview =
     typeof args.command === "string" ? args.command : typeof args.content === "string" ? args.content : "";
+  const workerReason = distinctWorkerReason(workerCall) === escalation?.reason ? "" : distinctWorkerReason(workerCall);
   return (
     <div
       className={bare ? "workerdec bare" : "approval workerdec" + (compact ? " approval-dock" : "")}
@@ -98,14 +125,16 @@ export function WorkerDecisionCard({
         </div>
         <span className="approval-scope">{t("workerdec.scope", { worker })}</span>
       </div>
+      {workerCall?.item_title && <p className="team-totals">{workerCall.item_title}</p>}
+      <ApprovalEscalation escalation={escalation} reviewerUnsure={reviewerUnsure} />
 
       <div className="workerdec-label">{t("workerdec.wants_to", { worker })}</div>
       {workerCall ? (
         <div className="workerdec-call" data-testid="workerdec-call">
           <TitleText line={humanizeApprovalTitle(workerCall.tool, args)} />
           {preview && <PreviewBlock text={preview} />}
-          {workerCall.reason && workerCall.reason !== "requires approval" && (
-            <div className="approval-reason">{workerCall.reason}</div>
+          {workerReason && (
+            <div className="approval-reason">{workerReason}</div>
           )}
         </div>
       ) : (

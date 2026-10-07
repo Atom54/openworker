@@ -23,7 +23,9 @@ import {
   workItemsItemFromPayload,
 } from "../cardPayloads";
 import { ApprovalCard } from "../components/ApprovalCard";
-import { BoardWakeCard } from "../components/BoardWakeCard";
+import { TeamUpdateLine } from "../components/TeamUpdateLine";
+import { TeamViewGallery } from "./TeamViewGallery";
+import type { TeamSummary } from "../teamView";
 import { ConnectorMessageCard } from "../components/ConnectorMessageCard";
 import { ConnectorRequestCard } from "../components/ConnectorRequestCard";
 import { DirectoryRequestCard } from "../components/DirectoryRequestCard";
@@ -59,6 +61,7 @@ export interface CardDef {
 }
 
 export const CARDS: CardDef[] = [
+  { id: "team-view", title: "Team View", group: "Team", event: "team summary", stage: "transcript", states: STATES["team-view"], renderInline: s => <TeamViewGallery key={s.id} summary={s.payload.summary as TeamSummary} /> },
   {
     id: "approval",
     title: "Approval",
@@ -195,12 +198,12 @@ export const CARDS: CardDef[] = [
   },
   {
     id: "board-wake",
-    title: "Board wake",
+    title: "Team update line",
     group: "Messages",
     event: "turn_start (source.connector = board)",
     stage: "transcript",
     states: STATES["board-wake"],
-    renderInline: (s) => <BoardWakeCard source={s.payload.source as MessageSource} />,
+    renderInline: (s) => <TeamUpdateLine sources={(s.payload.sources as MessageSource[]) || [s.payload.source as MessageSource]} defaultOpen={s.payload.expanded === true} />,
   },
   {
     id: "connector-message",

@@ -112,7 +112,7 @@ const REMOTE_SESSION = {
   archived: false,
 };
 
-test("runs-on chip: appears with a machine enrolled, retargets the draft, hides the folder chip", async ({ page }) => {
+test("runs-on chip: appears with a machine enrolled, retargets the draft; the folder chip then asks for a path on the machine", async ({ page }) => {
   await seedMachines(page, [HETZNER]);
   await page.goto("/");
   await page.getByRole("button", { name: "New session" }).click();
@@ -124,10 +124,15 @@ test("runs-on chip: appears with a machine enrolled, retargets the draft, hides 
   await chip.click();
   await page.getByText("⌂ hetzner-box").click();
   await expect(chip).toContainText("hetzner-box");
-  // A remote draft never carries a local folder.
-  await expect(page.getByTestId("folder-chip")).toHaveCount(0);
+  // A remote draft never carries a LOCAL folder: the chip stays, but opens the dialog that
+  // takes a path on the machine instead of the Mac's file picker (2026-09-29).
+  await page.getByTestId("folder-chip").click();
+  await expect(page.getByTestId("machine-folder-dialog")).toBeVisible();
+  await expect(page.getByTestId("machine-folder-dialog")).toContainText("hetzner-box");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("machine-folder-dialog")).toHaveCount(0);
 
-  // And back: This Mac restores the folder chip.
+  // And back: This Mac keeps the folder chip, now the local one.
   await chip.click();
   await page.getByRole("button", { name: "This Mac" }).click();
   await expect(chip).toContainText("This Mac");

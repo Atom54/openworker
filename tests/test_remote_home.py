@@ -1653,6 +1653,18 @@ def test_systemd_unit_content(tmp_path):
     assert f"Environment=COWORKER_STATE_DIR={tmp_path / 'state'}" in unit
     assert "Restart=always" in unit
     assert "WantedBy=default.target" in unit
+    # Ordered after the OpenShell gateway: started before it, sessions wait after a reboot.
+    assert "After=network-online.target openshell-gateway.service" in unit
+
+
+def test_sandbox_announcement_says_sessions_check_again(capsys, monkeypatch):
+    from coworker.remote import joiner
+
+    monkeypatch.setattr(joiner, "sandbox_status", lambda: {"provider": None, "refused": "The OpenShell gateway is not running"})
+    joiner._announce_sandbox()
+    err = capsys.readouterr().err
+    assert "sessions cannot start yet: The OpenShell gateway is not running" in err
+    assert "checks again when it starts" in err and "WILL BE REFUSED" not in err
 
 
 def test_service_install_refuses_non_linux_and_unjoined(tmp_path, capsys):

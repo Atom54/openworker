@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { SessionSandbox } from "./SandboxChip";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 // Emits the asset URL only; the worker itself loads lazily with the pdfjs chunk.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
@@ -18,11 +18,12 @@ import {
 import type { SessionInfo, TodoItem } from "../types";
 import { AccessSection } from "./AccessSection";
 import { BoardSection } from "./BoardPanel";
-import { Icon } from "./Icon";
-import { formatTokens, totalTokens } from "../usage";
-import type { SessionUsage, TurnUsage } from "../types";
+import { TeamRail } from "./TeamRail";
+import type { TeamSummary } from "../teamView";
+import type { WorkerFilter } from "../teamRoster";
 
-const totalOf = (u: TurnUsage) => u.input + u.output + u.cache_read + u.cache_write;
+import { Icon } from "./Icon";
+import type { SessionUsage } from "../types";
 import { Markdown, OPEN_ARTIFACT_EVENT } from "./Markdown";
 
 type Panel = "progress" | "artifacts" | "board" | "journal" | "team" | "files";
@@ -50,6 +51,7 @@ function kindFromPath(path: string): string {
 
 interface Props {
   active: boolean;
+  teamView?: ReactNode;
   sessionId: string;
   refreshKey: number;
   toolNames: string[];
@@ -68,6 +70,10 @@ interface Props {
   scratchPrimary?: boolean;
   openAccessKey?: number;
   onOpenIntegrations?: () => void;
+  // OPE-219: the session's sandbox, for the Access section's Sites group.
+  sandbox?: SessionSandbox | null;
+  onSandbox?: (next: SessionSandbox) => void;
+  onOpenSandboxSettings?: () => void;
   // Agent teams (OPE-96): App owns board data (the plan gate needs it too);
   // the rail renders the summary section and the expand affordance.
   board?: Board | null;
@@ -84,12 +90,17 @@ interface Props {
   teamUsage?: SessionUsage;
   onOpenTeamChat?: () => void;
   onOpenWorker?: (s: SessionInfo) => void;
+  onOpenTeamView?: () => void;
+  onOpenWorkers?: (filter: WorkerFilter) => void;
+  teamSummary?: TeamSummary | null;
+  teamMachine?: string;
   // Bumped when a [.](board:) chip in the transcript is clicked — expands the Board section.
   openBoardKey?: number;
 }
 
 export function RightRail({
   active,
+  teamView,
   sessionId,
   refreshKey,
   toolNames,
@@ -104,6 +115,9 @@ export function RightRail({
   scratchPrimary,
   openAccessKey = 0,
   onOpenIntegrations,
+  sandbox = null,
+  onSandbox,
+  onOpenSandboxSettings,
   board,
   onExpandBoard,
   onOpenBoardItem,
@@ -114,6 +128,10 @@ export function RightRail({
   teamUsage,
   onOpenTeamChat,
   onOpenWorker,
+  onOpenTeamView,
+  onOpenWorkers,
+  teamSummary,
+  teamMachine,
   openBoardKey = 0,
 }: Props) {
   const { t } = useTranslation();
@@ -191,12 +209,13 @@ export function RightRail({
   // just expanded; owner-hit 2026-08-21).
   const prevPreviewOpen = useRef(false);
   useEffect(() => {
-    const open = !!selected;
+    const open = !!selected || !!teamView;
     if (open !== prevPreviewOpen.current) {
       prevPreviewOpen.current = open;
       onPreviewChange?.(open);
     }
-  }, [!!selected, onPreviewChange]);
+  }, [!!selected, !!teamView, onPreviewChange]);
+  useEffect(() => { if (teamView) { setSelected(null); setContent(null); } }, [!!teamView]);
 
   const reloadSelected = () => {
     if (!selected) return Promise.resolve();
@@ -243,8 +262,14 @@ export function RightRail({
   if (!active) return null;
 
   return (
-    <aside className={"right-rail" + (selected ? " artifact-mode" : "")}>
-      {selected ? (
+    <aside className={"right-rail" + (selected || teamView ? " artifact-mode" : "")}>
+      {teamView && <div className="team-resize-handle" role="separator" aria-label={t("teamview.resize")} aria-orientation="vertical" tabIndex={0}
+        onKeyDown={e => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); const width = e.currentTarget.parentElement!.getBoundingClientRect().width + (e.key === "ArrowLeft" ? 32 : -32); document.documentElement.style.setProperty("--team-rail-w", Math.min(window.innerWidth * .75, Math.max(320, width)) + "px"); }}
+        onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) document.documentElement.style.setProperty("--team-rail-w", Math.min(window.innerWidth * .75, Math.max(320, window.innerWidth - e.clientX)) + "px"); }}
+        onPointerUp={e => e.currentTarget.releasePointerCapture(e.pointerId)} />}
+      {teamView ? teamView :
+      selected ? (
         <ArtifactViewer
           sessionId={sessionId}
           artifact={selected}
@@ -271,90 +296,21 @@ export function RightRail({
             </RailSection>
           )}
 
-          {/* Agent teams (OPE-96): board summary — grouped by state, blocked on top.
-              Hidden entirely until the workspace has items (no chrome for plain sessions). */}
-          {board?.space && (
-            <RailSection
-              title={t("rail.board_title")}
-              count={boardChip(board, t).text}
-              countAttention={boardChip(board, t).attention}
-              open={open.board}
-              onToggle={() => setOpen({ ...open, board: !open.board })}
-              action={
-                <button
-                  className="rail-mini-btn"
-                  data-testid="board-expand"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onExpandBoard?.();
-                  }}
-                  title={t("rail.board_expand")}
-                >
-                  <Icon name="panelOpen" size={13} />
-                </button>
-              }
-            >
-              <BoardSection
-                board={board}
-                onExpand={() => onExpandBoard?.()}
-                onOpenItem={onOpenBoardItem}
-              />
-            </RailSection>
-          )}
+          {/* Standalone boards have no team icon. Keep their existing entry point;
+              staffed leads use the quick look and Team View instead. */}
+          {!isLead && board?.space && <RailSection title={t("rail.board_title")} open={open.board}
+            onToggle={() => setOpen({ ...open, board: !open.board })}
+            action={<button className="rail-mini-btn" data-testid="board-expand" onClick={onExpandBoard} title={t("rail.board_expand")}><Icon name="panelOpen" size={13} /></button>}>
+            <BoardSection board={board} onExpand={() => onExpandBoard?.()} onOpenItem={onOpenBoardItem} />
+          </RailSection>}
 
           {/* The team panel: who's working, on what, and the way into their sessions —
               the altitude-3 escape hatch, moved here from the sidebar (RECENT keeps ONE
               entry per team: the lead). */}
-          {teamMembers.length > 0 && (
-            <RailSection
-              title={t("rail.team_title")}
-              open={open.team}
-              onToggle={() => setOpen({ ...open, team: !open.team })}
-              count={String(teamMembers.length)}
-            >
-              <div className="rail-team" data-testid="team-panel">
-                {teamMembers.map((w) => (
-                  <button
-                    className="rail-team-row"
-                    key={w.session_id}
-                    data-testid={`team-row-${w.team?.actor || w.session_id}`}
-                    onClick={() => onOpenWorker?.(w)}
-                    title={t("rail.team_open_session", { name: w.team?.actor || t("rail.team_worker") })}
-                  >
-                    <span className={"team-dot " + (w.team?.status || "idle")} />
-                    <span className="rail-team-name">{w.team?.actor || w.agent}</span>
-                    <span className="rail-team-item">{w.team?.current_item || t("rail.team_sleeping")}</span>
-                    <span className="rail-team-open">{t("rail.team_open")}</span>
-                  </button>
-                ))}
-                {teamChatEnabled && onOpenTeamChat && (
-                  <button className="rail-team-row rail-chat-row" data-testid="team-chat-row" onClick={onOpenTeamChat}>
-                    <span className="team-hash">#</span>
-                    <span className="rail-team-name">{t("rail.team_chat")}</span>
-                    {teamChatUnread > 0 && <span className="team-chat-badge">{teamChatUnread}</span>}
-                  </button>
-                )}
-                {teamUsage && totalTokens(teamUsage) > 0 && (
-                  /* Tokens for the whole tree (lead + workers), by model. Counts only —
-                     no dollars (owner ruling, spec §5). */
-                  <div className="rail-team-usage" data-testid="team-usage">
-                    <div className="rail-team-usage-head">
-                      <span>{t("misc.rail.tokens")}</span>
-                      <span className="text-muted">{formatTokens(totalTokens(teamUsage))}</span>
-                    </div>
-                    {Object.entries(teamUsage.byModel)
-                      .sort((a, b) => totalOf(b[1]) - totalOf(a[1]))
-                      .map(([model, u]) => (
-                        <div className="rail-team-usage-row" key={model} title={t("misc.rail.usage_title", { model, input: u.input, output: u.output, cached: u.cache_read })}>
-                          <span className="rail-team-usage-model">{model.includes(":") ? model.split(":").slice(1).join(":") : model}</span>
-                          <span className="text-muted">{formatTokens(totalOf(u))}</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </RailSection>
-          )}
+          {teamMembers.length > 0 && <TeamRail key={sessionId} members={teamMembers} summary={teamSummary}
+            open={open.team} onToggle={() => setOpen({ ...open, team: !open.team })}
+            usage={teamUsage} machine={teamMachine} chatEnabled={teamChatEnabled} unread={teamChatUnread}
+            onChat={onOpenTeamChat} onWorker={onOpenWorker} onTeam={onOpenTeamView} onWorkers={onOpenWorkers} />}
 
           {showArtifacts && (
           <RailSection
@@ -478,6 +434,9 @@ export function RightRail({
               scratchPrimary={scratchPrimary}
               openKey={openAccessKey}
               onOpenIntegrations={onOpenIntegrations}
+              sandbox={sandbox}
+              onSandbox={onSandbox}
+              onOpenSandboxSettings={onOpenSandboxSettings}
             />
           </div>
         </>
@@ -488,17 +447,6 @@ export function RightRail({
 
 // The Board section's header chip: the attention states (blocked/review) when present,
 // otherwise a quiet active count. Full per-state summary stays on the topbar button.
-function boardChip(board: Board, t: TFunction): { text: string; attention: boolean } {
-  const counts: Record<string, number> = {};
-  for (const item of board.items) counts[item.state] = (counts[item.state] || 0) + 1;
-  const attn: string[] = [];
-  if (counts.blocked) attn.push(t("rail.board_chip_blocked", { count: counts.blocked }));
-  if (counts.review) attn.push(t("rail.board_chip_review", { count: counts.review }));
-  if (attn.length) return { text: attn.join(" · "), attention: true };
-  const active = (counts.in_progress || 0) + (counts.open || 0);
-  return { text: active ? t("rail.board_chip_active", { count: active }) : "", attention: false };
-}
-
 function ProgressSummary({ running, toolNames, todo }: { running: boolean; toolNames: string[]; todo: TodoItem[] }) {
   const { t } = useTranslation();
   if (todo.length) {

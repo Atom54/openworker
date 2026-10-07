@@ -608,6 +608,31 @@ def test_clone_pull_roundtrip_and_no_token_at_rest(tmp_path, monkeypatch, _origi
     assert (clone / "next.txt").read_text() == "more"
 
 
+def test_clone_explicit_pr_ref_returns_full_sha(tmp_path, monkeypatch, _origin):
+    from pathlib import Path
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("GITHUB_GIT_URL", f"file://{_origin['base']}")
+    work = _origin["work"]
+    (work / "pr.txt").write_text("PR-only change")
+    _git(["add", "."], cwd=work)
+    _git(["commit", "-m", "PR revision"], cwd=work)
+    _git(["push", "origin", "HEAD:refs/pull/42/head"], cwd=work)
+    _, tools = _clone_tools(SecretStore(), tmp_path)
+    out = tools["github_clone"]("acme", "site", ref="refs/pull/42/head")
+    assert out.get("ok"), out
+    assert len(out["head"]) == 40
+    assert (Path(out["path"]) / "pr.txt").read_text() == "PR-only change"
+    assert out["head"] == _git(["rev-parse", "HEAD"], cwd=work).stdout.strip()
+
+
+def test_clone_rejects_option_like_ref_before_git(tmp_path, monkeypatch):
+    _, tools = _clone_tools(SecretStore(), tmp_path)
+    monkeypatch.setattr("coworker.connectors.integration_tools._run_git",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run git")))
+    for ref in ("--upload-pack=command", "main:refs/heads/main", "main other"):
+        assert "ref must be" in tools["github_clone"]("acme", "site", ref=ref)["error"]
+
+
 def test_clone_refuses_paths_outside_granted_roots(tmp_path, monkeypatch, _origin):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("GITHUB_GIT_URL", f"file://{_origin['base']}")

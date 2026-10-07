@@ -2,6 +2,7 @@
 // JSON export for the server-side contract check can import it.
 import type { CardState } from "../types";
 import { approvalStates } from "./approval";
+import { teamViewStates } from "./team-view";
 import { boardWakeStates } from "./board-wake";
 import { connectorMessageStates } from "./connector-message";
 import { connectorRequestStates } from "./connector-request";
@@ -24,6 +25,7 @@ export const STATES = {
   "directory-request": directoryRequestStates,
   "tool-request": toolRequestStates,
   "board-wake": boardWakeStates,
+  "team-view": teamViewStates,
   "connector-message": connectorMessageStates,
 } satisfies Record<string, CardState[]>;
 

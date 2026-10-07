@@ -147,6 +147,7 @@ export function GithubDetail({ c, cloud, onChanged }: DetailProps) {
           c={c}
           cloud={cloud}
           title={t("github.add_installation_title")}
+          githubFlow="install"
           onClose={() => setAdding(false)}
           onChanged={changed}
         />

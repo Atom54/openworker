@@ -109,7 +109,8 @@ def test_spawn_starts_a_session_from_the_spec(tmp_path, monkeypatch):
     assert rec.mode == "auto-approve" and rec.spawn["approval_mode"] == "auto-approve"
     assert mgr.unattended.is_unattended(sid) is True and mgr.reviewer_opted(sid) is True
     assert mgr.get_engine(sid).is_attended() is True
-    assert rec.spawn["worktree"] == "" and rec.spawn["clone"] == ""  # no base directory
+    assert rec.spawn["workspace_setup"] == "agent"
+    assert Path(rec.workspace).is_dir()
     # Session-only: the instructions join the standing rules for this session, no other.
     assert "For this session: Correctness first" in mgr._user_rules_for(sid)
     other = mgr.get_engine("plain", agent="cowork")
@@ -154,65 +155,44 @@ def _local_origin(tmp_path) -> Path:
     return tmp_path / "origin"
 
 
-def test_spawn_checks_out_a_worktree_and_archive_removes_it(tmp_path, monkeypatch):
-    origin = _local_origin(tmp_path)
-    monkeypatch.setenv("GITHUB_GIT_URL", f"file://{origin}")
+def test_spawn_provisions_only_a_directory_and_preserves_it(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENWORKER_BASE_DIR", raising=False)
     mgr = _mgr(tmp_path, monkeypatch)
-    delivered: list[tuple[str, str]] = []
+    delivered = []
 
-    async def fake_deliver(session_id, message, *, source=None):
-        delivered.append((session_id, message))
+    async def deliver(sid, message, *, source=None):
+        delivered.append((sid, message))
 
-    monkeypatch.setattr(mgr, "deliver_to_session", fake_deliver)
+    monkeypatch.setattr(mgr, "deliver_to_session", deliver)
+    monkeypatch.setattr("coworker.connectors.integration_tools._run_git",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("harness must not run git")))
     base = tmp_path / "work"
-    cfg = {"config_id": "cfg2", "event": "pr_open", "spawn": {"kind": "new", "persona": "cowork", "models": [], "base_dir": str(base), "worktree": True}}
+    cfg = {"config_id": "cfg2", "event": "pr_open",
+           "spawn": {"kind": "new", "persona": "swe-lead", "base_dir": str(base), "worktree": True}}
     asyncio.run(mgr._dispatch_inbound(_github_event(configuration=cfg)))
     sid, opening = delivered[0]
     rec = mgr.session_store.load(sid)
-    clone, wt = base / "site" / "main", base / "site" / "pr-42"
-    assert rec.spawn["clone"] == str(clone) and rec.spawn["worktree"] == str(wt)
-    assert Path(rec.workspace).resolve() == wt.resolve()
-    assert (wt / "worker.ts").exists() and not (clone / "worker.ts").exists()  # the PR head, not main
-    assert f"checkout of the code under review: {wt}" in opening
-    # No token at rest in the clone.
-    assert "AUTHORIZATION" not in (clone / ".git" / "config").read_text()
-    # Archive: the worktree goes, the clone stays.
-    assert mgr.set_session_flags(sid, archived=True)["ok"] is True
-    assert not wt.exists() and (clone / ".git").exists()
-    assert "pr-42" not in _git("-C", str(clone), "worktree", "list")
+    directory = base / sid
+    assert Path(rec.workspace) == directory.resolve()
+    assert not list(directory.iterdir())
+    assert rec.spawn["workspace_setup"] == "agent"
+    assert "No repository or worktree was created" in opening
+    assert "refs/pull/42/head" in opening
+    (directory / "keep.txt").write_text("unfinished work")
+    mgr.set_session_flags(sid, archived=True)
+    mgr.delete_session(sid)
+    assert (directory / "keep.txt").read_text() == "unfinished work"
 
 
-def test_spawn_without_a_worktree_works_in_the_clone(tmp_path, monkeypatch):
-    origin = _local_origin(tmp_path)
-    monkeypatch.setenv("GITHUB_GIT_URL", f"file://{origin}")
-    monkeypatch.delenv("OPENWORKER_BASE_DIR", raising=False)
-    mgr = _mgr(tmp_path, monkeypatch)
-
-    async def fake_deliver(session_id, message, *, source=None):
-        pass
-
-    monkeypatch.setattr(mgr, "deliver_to_session", fake_deliver)
-    base = tmp_path / "work"
-    cfg = {"config_id": "cfg3", "event": "issue_open", "spawn": {"kind": "new", "persona": "cowork", "base_dir": str(base), "worktree": False}}
-    asyncio.run(mgr._dispatch_inbound(_github_event(kind="issue_open", number="9", configuration=cfg)))
-    rec = next(mgr.session_store.load(r["session_id"]) for r in mgr.list_sessions() if r["origin"] == "github")
-    assert Path(rec.workspace).resolve() == (base / "site" / "main").resolve()
-    assert rec.spawn["worktree"] == ""
-    # Deleting it keeps the clone (nothing to remove).
-    mgr.delete_session(rec.session_id)
-    assert (base / "site" / "main" / ".git").exists()
-
-
-def test_checkout_outside_the_base_dir_is_refused(tmp_path, monkeypatch):
+def test_session_directory_outside_the_base_dir_is_refused(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENWORKER_BASE_DIR", str(tmp_path / "allowed"))
     (tmp_path / "allowed").mkdir()
     mgr = _mgr(tmp_path, monkeypatch)
-    recorded: list = []
-    monkeypatch.setattr(mgr.unrouted, "record", lambda *a, **k: recorded.append((a, k)))
-    cfg = {"config_id": "cfg4", "event": "pr_open", "spawn": {"kind": "new", "persona": "cowork", "base_dir": str(tmp_path / "elsewhere"), "worktree": True}}
+    recorded = []
+    monkeypatch.setattr(mgr.unrouted, "record", lambda *a, **k: recorded.append(k))
+    cfg = {"event": "pr_open", "spawn": {"persona": "cowork", "base_dir": str(tmp_path / "elsewhere")}}
     asyncio.run(mgr._dispatch_inbound(_github_event(configuration=cfg)))
-    assert recorded and "checkout failed" in recorded[0][1]["reason"]
+    assert recorded and "session directory failed" in recorded[0]["reason"]
 
 
 def test_configured_event_to_an_existing_session_carries_its_framing(tmp_path, monkeypatch):
@@ -257,7 +237,7 @@ def test_configured_opening_reads_plainly():
     assert "Your session folder" not in text
 
 
-def test_named_mention_on_a_pr_checks_out_the_pr_head(tmp_path, monkeypatch):
+def test_named_mention_on_a_pr_describes_the_ref_without_cloning(tmp_path, monkeypatch):
     origin = _local_origin(tmp_path)
     monkeypatch.setenv("GITHUB_GIT_URL", f"file://{origin}")
     monkeypatch.delenv("OPENWORKER_BASE_DIR", raising=False)
@@ -273,8 +253,9 @@ def test_named_mention_on_a_pr_checks_out_the_pr_head(tmp_path, monkeypatch):
     ev.raw["is_pr"] = True
     asyncio.run(mgr._dispatch_inbound(ev))
     rec = next(mgr.session_store.load(r["session_id"]) for r in mgr.list_sessions() if r["origin"] == "github")
-    assert rec.spawn["worktree"] == str(base / "site" / "pr-42")
-    assert (base / "site" / "pr-42" / "worker.ts").exists()  # the PR head, not main
+    assert rec.spawn["workspace_setup"] == "agent"
+    assert not (base / "site").exists()
+    assert "refs/pull/42/head" in configured_opening(ev, "", rec.workspace)
     assert rec.title.startswith("PR mention #42")
 
 
@@ -305,6 +286,41 @@ def test_swe_lead_is_reachable_on_github_and_slack():
     assert set(m.connectors) == {"github", "slack"}
 
 
+def test_missing_target_is_parked_without_a_replacement_lead(tmp_path, monkeypatch):
+    mgr = _mgr(tmp_path, monkeypatch)
+    parked = []
+    monkeypatch.setattr(mgr.unrouted, "record", lambda *a, **k: parked.append(k))
+    async def no_spawn(*args):
+        raise AssertionError("targeted events must not fall through to mention spawning")
+    monkeypatch.setattr(mgr, "_route_mention", no_spawn)
+    ev = _github_event(configuration={"config_id": "cfg", "event": "issue_open"})
+    ev.target_session_id = "missing-lead"
+    before = mgr.list_sessions()
+    asyncio.run(mgr._dispatch_inbound(ev))
+    assert mgr.list_sessions() == before
+    assert "target session missing-lead is missing" in parked[0]["reason"]
+
+
+def test_worker_scratch_is_shared_with_lead_and_survives_rebuild(tmp_path, monkeypatch):
+    monkeypatch.setenv("COWORKER_SCRATCH_BASE", str(tmp_path / "scratch"))
+    mgr = _mgr(tmp_path, monkeypatch)
+    mgr.save("lead", mgr.get_engine("lead", agent="swe-lead"))
+    out = mgr.create_team("lead", [{"persona": "swe-worker", "name": "sam"}])
+    worker = out["workers"][0]
+    sid = worker["session_id"]
+    scratch = Path(worker["scratch_directory"])
+    assert scratch == tmp_path / "scratch" / "lead" / "workers" / sid
+    marker = scratch / "evidence.txt"
+    marker.write_text("verified")
+    lead = mgr.get_engine("lead")
+    engine = mgr.get_engine(sid)
+    assert "verified" in str(lead.registry.get("read_file").func(str(marker)))
+    assert "verified" in str(engine.registry.get("read_file").func(str(marker)))
+    mgr._engines.pop(sid)
+    assert mgr._provision_scratch(sid) == str(scratch)
+    assert "verified" in str(mgr.get_engine(sid).registry.get("read_file").func(str(marker)))
+
+
 def test_spawn_applies_the_configured_approval_mode_and_inbox_dial(tmp_path, monkeypatch):
     mgr = _mgr(tmp_path, monkeypatch)
 
@@ -323,4 +339,3 @@ def test_spawn_applies_the_configured_approval_mode_and_inbox_dial(tmp_path, mon
     asyncio.run(mgr._dispatch_inbound(_github_event(number="43", configuration=cfg)))
     sid = next(r["session_id"] for r in mgr.list_sessions() if r["title"].startswith("PR #43"))
     assert mgr.session_store.load(sid).mode == "bypass-approvals"
-

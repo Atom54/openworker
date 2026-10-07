@@ -11,6 +11,7 @@ import { chooseFolder } from "../tauri";
 import { fullPersonaName } from "../personaScope";
 import { baseName } from "../paths";
 import { Icon } from "./Icon";
+import { MachineFolderDialog } from "./MachineFolderDialog";
 
 // UX-029: the session-setup row — per-SESSION choices (coworker + folder) in their own
 // quiet chip row above the composer, a different species from the per-MESSAGE controls
@@ -41,9 +42,28 @@ interface Props {
   onImport: () => void;
 }
 
+// Picker order (UX ruling 2026-09-29): the general coworkers first, with no label; then
+// Engineering and Security, each under a hairline and a small label; any other group after,
+// by name. A group is left out when it has nothing to show.
+const PICKER_GROUP_ORDER = ["engineering", "security"];
+
+export function personaGroups(personas: Persona[]): { group: string; items: Persona[] }[] {
+  const by = new Map<string, Persona[]>();
+  for (const p of personas) {
+    const g = p.group && p.group !== "general" ? p.group : "";
+    by.set(g, [...(by.get(g) || []), p]);
+  }
+  const rest = [...by.keys()].filter((g) => g && !PICKER_GROUP_ORDER.includes(g)).sort();
+  return ["", ...PICKER_GROUP_ORDER, ...rest]
+    .filter((g) => (by.get(g) || []).length > 0)
+    .map((g) => ({ group: g, items: by.get(g) || [] }));
+}
+
 export function SessionSetupRow(props: Props) {
   const { t } = useTranslation();
   const [openMenu, setOpenMenu] = useState<"coworker" | "folder" | "machine" | null>(null);
+  // On a machine, the Mac's file picker cannot see the folders: a dialog takes a typed path.
+  const [machineDialog, setMachineDialog] = useState(false);
   const [recents, setRecents] = useState<RecentWorkspace[] | null>(null);
   const [error, setError] = useState("");
   const personas = (props.personas || []).filter((p) => p.enabled);
@@ -53,6 +73,12 @@ export function SessionSetupRow(props: Props) {
 
   const toggle = (menu: "coworker" | "folder" | "machine") => {
     setError("");
+    if (menu === "folder" && currentMachine) {
+      // The folder lives on the machine: no menu, the path dialog.
+      setOpenMenu(null);
+      setMachineDialog(true);
+      return;
+    }
     if (menu === "folder" && openMenu !== "folder") {
       getRecentWorkspaces().then(setRecents).catch(() => setRecents([]));
     }
@@ -80,6 +106,17 @@ export function SessionSetupRow(props: Props) {
   return (
     <div className="max-w-3xl mx-auto mb-1.5 px-1 flex items-center gap-1.5" data-testid="setup-row">
       {openMenu && <div className="fixed inset-0 z-20" onClick={() => setOpenMenu(null)} />}
+      {machineDialog && currentMachine && (
+        <MachineFolderDialog
+          coworkerName={fullPersonaName(current?.name, props.agent)}
+          machine={currentMachine}
+          onPick={(path, branch) => {
+            setMachineDialog(false);
+            props.onPickFolder(path, branch);
+          }}
+          onCancel={() => setMachineDialog(false)}
+        />
+      )}
 
       {/* Coworker chip — name only, no icon (owner call). */}
       <div className="relative">
@@ -89,25 +126,36 @@ export function SessionSetupRow(props: Props) {
         </button>
         {openMenu === "coworker" && (
           <div className="setup-menu absolute bottom-full mb-1.5 left-0 z-30 w-[320px] bg-panel border border-line rounded-xl2 shadow-xl p-1">
-            {personas.map((p) => (
-              <button
-                key={p.id}
-                className={
-                  "w-full text-left px-2.5 py-2 rounded-lg hover:bg-paper " +
-                  (p.id === props.agent ? "bg-accentSoft/50" : "")
-                }
-                onClick={() => {
-                  setOpenMenu(null);
-                  props.onPickCoworker(p.id);
-                }}
-              >
-                <span className="block text-ui font-medium text-ink">
-                  {fullPersonaName(p.name, p.id)}
-                </span>
-                {p.tagline && (
-                  <span className="block text-meta text-muted truncate">{p.tagline}</span>
+            {personaGroups(personas).map(({ group, items }) => (
+              <div key={group || "general"} data-testid={group ? `coworker-group-${group}` : undefined}>
+                {group && (
+                  <div className="border-t border-line mt-1 pt-1">
+                    <div className="px-2.5 pt-1.5 pb-0.5 text-meta text-faint">
+                      {t(`setup.group_${group}`, { defaultValue: group })}
+                    </div>
+                  </div>
                 )}
-              </button>
+                {items.map((p) => (
+                  <button
+                    key={p.id}
+                    className={
+                      "w-full text-left px-2.5 py-2 rounded-lg hover:bg-paper " +
+                      (p.id === props.agent ? "bg-accentSoft/50" : "")
+                    }
+                    onClick={() => {
+                      setOpenMenu(null);
+                      props.onPickCoworker(p.id);
+                    }}
+                  >
+                    <span className="block text-ui font-medium text-ink">
+                      {fullPersonaName(p.name, p.id)}
+                    </span>
+                    {p.tagline && (
+                      <span className="block text-meta text-muted truncate">{p.tagline}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             ))}
             <div className="border-t border-line mt-1 pt-1">
               <button

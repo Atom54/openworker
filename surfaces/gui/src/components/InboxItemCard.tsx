@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { ApprovalEscalation } from "./ApprovalEscalation";
 import { routeInboxItemLike, type InboxItem, type TeamMemberDecision } from "../api";
 import {
   itemsGateResolution,
@@ -64,8 +65,13 @@ export function approvalItemFromParked(item: InboxItem): Extract<Item, { kind: "
   if (item.kind !== "approval" || !d?.tool) return null;
   return {
     kind: "approval",
+    toolCallId: item.tool_call_id || undefined,
     name: String(d.tool),
     args: d.arguments ?? {},
+    escalation: d.escalation,
+    reviewerUnsure: d.reviewer_unsure,
+    provenance: d.provenance,
+    workerCall: d.worker_call,
     reason: typeof d.reason === "string" ? d.reason : "",
     ...(d.category ? { category: String(d.category) } : {}),
     ...(d.standing_target ? { standingTarget: String(d.standing_target) } : {}),
@@ -362,6 +368,8 @@ export function InboxItemCard({
           bare
           decision={decision}
           workerCall={item.data.worker_call}
+          escalation={item.data.escalation}
+          reviewerUnsure={item.data.reviewer_unsure}
           chip={chip}
           onFollow={() => onResolve(item.id, "allow")}
           onOverride={() => {
@@ -441,9 +449,10 @@ export function InboxItemCard({
       ) : null}
       {/* A real (non-boilerplate) reason travels in data — the body may be skipped
           above, and the reason must survive that (e.g. a reviewer-unsure note). */}
-      {item.kind === "approval" && item.data?.reason ? (
+      {item.kind === "approval" && item.data?.reason && item.data.reason !== item.data.escalation?.reason ? (
         <div className="text-meta text-muted mt-1">{item.data.reason}</div>
       ) : null}
+      {item.kind === "approval" && <ApprovalEscalation escalation={item.data?.escalation} reviewerUnsure={item.data?.reviewer_unsure} />}
       {!isQuestion && chip}
       {item.kind === "approval" ? (
         <div className="flex items-center gap-2 mt-2.5 flex-wrap">

@@ -548,7 +548,8 @@ def _lifespan(app):
 
 
 TOP_COMMANDS = ("join", "up")
-MACHINE_COMMANDS = ("status", "keys", "logs", "service", "leave")
+# `sandbox` is served but not listed in `openworker --help` until it has been tried on a fresh machine.
+MACHINE_COMMANDS = ("status", "keys", "logs", "service", "leave", "sandbox")
 
 
 class _Only:
@@ -557,10 +558,19 @@ class _Only:
 
     def __init__(self, sub, only):
         self._sub, self._only = sub, only
+        self._hidden: set[str] = set()
 
-    def add_parser(self, name, **kw):
+    def add_parser(self, name, *, hidden=False, **kw):
+        """`hidden`: served, but shown in no help text (a command not yet tried widely)."""
         if self._only is None or name in self._only:
-            return self._sub.add_parser(name, **kw)
+            if hidden:
+                kw.pop("help", None)  # no line of its own in the command list
+            parser = self._sub.add_parser(name, **kw)
+            if hidden:
+                self._hidden.add(name)
+            shown = [n for n in self._sub.choices if n not in self._hidden]
+            self._sub.metavar = "{" + ",".join(shown) + "}"  # the usage line lists only these
+            return parser
         return argparse.ArgumentParser(add_help=False)
 
 
@@ -633,6 +643,13 @@ def cli(
     p_uninstall = service_sub.add_parser("uninstall", help="disable and remove the unit")
     p_uninstall.add_argument("--unit", default=None, help="unit file name (default: this machine's)")
     service_sub.add_parser("list", help="show every openworker unit on this box and its state dir")
+    p_sandbox = sub.add_parser("sandbox", hidden=True, description="Run this machine's agents in OpenShell sandboxes.")
+    sandbox_sub = p_sandbox.add_subparsers(dest="sandbox_command", required=True)
+    sandbox_sub.add_parser("status", help="what OpenShell sandboxes need here, and what is missing")
+    p_sandbox_setup = sandbox_sub.add_parser("setup", help="set this machine up (shows each change and asks first)")
+    p_sandbox_setup.add_argument("--yes", action="store_true", help="make the changes without asking")
+    p_sandbox_remove = sandbox_sub.add_parser("remove", help="undo what `setup` did on this machine (Windows)")
+    p_sandbox_remove.add_argument("--yes", action="store_true", help="remove without asking")
 
     args = parser.parse_args(argv)
     state = state_dir()
@@ -654,6 +671,14 @@ def cli(
         return _cmd_secrets(state, args)
     if args.command == "service":
         return _cmd_service(state, args)
+    if args.command == "sandbox":
+        from ..sandbox import setup_cmd
+
+        if args.sandbox_command == "setup":
+            return setup_cmd.setup(yes=args.yes)
+        if args.sandbox_command == "remove":
+            return setup_cmd.remove(yes=args.yes)
+        return setup_cmd.status()
     return 2
 
 
@@ -766,6 +791,12 @@ def _run(state: Path, controller: str, name: str, token=None, on_welcome=None) -
     except EngineBusy as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    # Sessions started by this process belong to a headless machine: with no setting they
+    # run in OpenShell sandboxes when OpenShell is usable here, and say so loudly when not.
+    from ..sandbox.selection import HEADLESS_ENV
+
+    os.environ[HEADLESS_ENV] = "1"
+    _announce_sandbox()
     try:
         asyncio.run(
             run_joined(
@@ -783,6 +814,37 @@ def _run(state: Path, controller: str, name: str, token=None, on_welcome=None) -
     except JoinRejected as exc:
         print(f"error: {exc.reason}: {exc.detail or 'rejected by controller'}", file=sys.stderr)
         return 1
+
+
+def sandbox_status() -> dict:
+    """How sessions on this machine will run: {"provider", "explicit", "warning"} or
+    {"provider": None, "refused": why}."""
+    from ..config import load_config
+    from ..sandbox.selection import select
+
+    try:
+        chosen = select(load_config().sandbox_provider, headless=True)
+    except Exception as exc:
+        return {"provider": None, "refused": str(exc)}
+    return {"provider": chosen.provider, "explicit": chosen.explicit, "warning": chosen.warning}
+
+
+def _announce_sandbox() -> None:
+    """Say at start how sessions will run. A refusal here is not final: each session checks
+    again when it starts, so a gateway that is still coming up after a reboot (the unit
+    starts seconds before it) only delays sessions, it does not lose them."""
+    info = sandbox_status()
+    if info.get("refused"):
+        print(
+            f"\n[openworker] sessions cannot start yet: {info['refused']}\n"
+            "[openworker] Each session checks again when it starts.\n",
+            file=sys.stderr,
+        )
+    elif info.get("warning"):
+        bar = "!" * 78
+        print(f"\n{bar}\n[openworker] {info['warning']}\n{bar}\n", file=sys.stderr)
+    else:
+        print(f"[openworker] sandbox: {info['provider']}")
 
 
 def _cmd_secrets(state: Path, args) -> int:
@@ -826,7 +888,9 @@ def _systemd_unit(state: Path, exe: str, name: str = "") -> str:
     return (
         "[Unit]\n"
         f"Description=OpenWorker headless (joined machine{label})\n"
-        "After=network-online.target\n"
+        # After the OpenShell gateway too, when it is installed: started before it, the
+        # first sessions after a reboot wait for it (seen 2026-09-29, a 7 s gap).
+        "After=network-online.target openshell-gateway.service\n"
         "Wants=network-online.target\n"
         "\n"
         "[Service]\n"
@@ -838,6 +902,22 @@ def _systemd_unit(state: Path, exe: str, name: str = "") -> str:
         "[Install]\n"
         "WantedBy=default.target\n"
     )
+
+
+def _linger_on() -> bool:
+    """Whether this user's services keep running without a login session (`loginctl
+    enable-linger`). Unknown counts as off, so the reminder is printed."""
+    import getpass
+    import subprocess
+
+    try:
+        done = subprocess.run(
+            ["loginctl", "show-user", getpass.getuser(), "-p", "Linger"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and done.stdout.strip() == "Linger=yes"
 
 
 def installed_units(unit_dir: Path) -> list[dict]:
@@ -944,10 +1024,11 @@ def _cmd_service(state: Path, args, platform: Optional[str] = None, home: Option
     print(f"wrote {unit_path}")
     if _systemctl_user("daemon-reload") and _systemctl_user("enable", "--now", derived):
         print(f"service enabled and started (systemctl --user status {derived}).")
-        print(
-            "To keep it running after logout/reboot without a login session:\n"
-            f"  sudo loginctl enable-linger {__import__('getpass').getuser()}"
-        )
+        if not _linger_on():
+            print(
+                "To keep it running after logout/reboot without a login session:\n"
+                f"  sudo loginctl enable-linger {__import__('getpass').getuser()}"
+            )
     else:
         print(
             "systemd user session not reachable from here — enable it manually:\n"
@@ -1164,6 +1245,7 @@ def machine_status(state: Path) -> dict:
             name=cfg.get("name", ""),
             machine_id=cfg.get("machine_id", ""),
         )
+    out["sandbox"] = sandbox_status()
     return out
 
 
@@ -1189,6 +1271,13 @@ def _cmd_status(state: Path, as_json: bool = False) -> int:
         print(f"controller:  {cfg['controller']}")
         print(f"name:        {cfg.get('name', '')}")
         print(f"machine id:  {cfg.get('machine_id', '')}")
+    sandbox = sandbox_status()
+    if sandbox.get("refused"):
+        print(f"sandbox:     SESSIONS REFUSED: {sandbox['refused']}")
+    else:
+        print(f"sandbox:     {sandbox['provider']}" + (" (set explicitly)" if sandbox.get("explicit") else ""))
+        if sandbox.get("warning"):
+            print(f"             {sandbox['warning']}")
     return 0
 
 

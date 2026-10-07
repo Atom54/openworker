@@ -22,14 +22,27 @@ export type QuestionItem = Extract<Item, { kind: "question" }>;
 export function approvalItemFromPayload(d: any): ApprovalItem {
   return {
     kind: "approval",
+    toolCallId: typeof d.tool_call_id === "string" ? d.tool_call_id : undefined,
     name: d.name,
     args: d.arguments,
     reason: d.reason,
     category: d.category,
     standingTarget: d.standing_target || undefined,
     searchProvider: d.search_provider || undefined,
+    siteWall: d.site_wall || undefined,
+    networkRequest: d.network_request
+      ? {
+          reason: String(d.network_request.reason || ""),
+          evidence: d.network_request.evidence !== false,
+          hosts: (d.network_request.hosts || []).map((h: any) => ({
+            host: String(h.host || ""),
+            blockedSecondsAgo: typeof h.blocked_seconds_ago === "number" ? h.blocked_seconds_ago : null,
+          })),
+        }
+      : undefined,
     provenance: d.provenance || undefined,
     reviewerUnsure: d.reviewer_unsure || undefined,
+    escalation: d.escalation || undefined,
     readonlyOk: !!d.readonly_ok,
     mcpDestination: d.mcp_destination || undefined,
     workerCall: d.worker_call && typeof d.worker_call === "object" && d.worker_call.tool ? d.worker_call : undefined,
@@ -46,6 +59,8 @@ export function planItemFromPayload(d: any): PlanItem {
 export function teamItemFromPayload(d: any): TeamRequestItem {
   return {
     kind: "teamreq",
+    title: d.title, summary: d.summary, groups: d.groups, planned_items: d.planned_items,
+    toolCallId: typeof d.tool_call_id === "string" ? d.tool_call_id : undefined,
     members: Array.isArray(d.members) ? d.members : [],
     enable_chat: !!d.enable_chat,
     note: d.note || "",
@@ -71,7 +86,10 @@ export function connectorItemFromPayload(d: any): ConnectorRequestItem {
 
 /** `items_proposed`, or a parked `gate: "items"` item. */
 export function workItemsItemFromPayload(d: any): WorkItemsItem {
-  return { kind: "itemsreq", items: Array.isArray(d.items) ? d.items : [], note: d.note || "" };
+  return { kind: "itemsreq", toolCallId: typeof d.tool_call_id === "string" ? d.tool_call_id : undefined,
+    title: d.title, summary: d.summary, targets: d.targets, external_actions: d.external_actions,
+    activities: d.activities, workstreams: d.workstreams, final_acceptance: d.final_acceptance,
+    items: Array.isArray(d.items) ? d.items : [], note: d.note || "" };
 }
 
 /** `directory_requested`. */

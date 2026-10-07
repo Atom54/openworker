@@ -184,7 +184,7 @@ test("team chat and journal of a cloud lead session route via the proxy", async 
 
   await expect(page.getByTestId("rail-toggle-team")).toBeVisible({ timeout: 12_000 });
   await page.getByTestId("rail-toggle-team").click();
-  await page.getByTestId("team-chat-row").click();
+  await page.getByTestId("team-chat-action").click();
   await expect(page.getByTestId("teamchat-view")).toBeVisible();
 
   await expect

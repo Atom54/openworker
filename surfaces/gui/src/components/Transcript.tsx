@@ -4,7 +4,8 @@ import type { ApprovalDecision, Item } from "../types";
 import { shortArgs } from "./ApprovalCard";
 import { humanizeAsk, humanizeTool, type HumanLine } from "../humanize";
 import { Markdown } from "./Markdown";
-import { BoardWakeCard } from "./BoardWakeCard";
+import { TeamUpdateLine, TeamCreatedLine, foldTeamUpdates } from "./TeamUpdateLine";
+import type { MessageSource } from "../api";
 import { ConnectorMessageCard } from "./ConnectorMessageCard";
 import { Icon } from "./Icon";
 
@@ -388,13 +389,13 @@ function TurnGroup({
   return (
     <details className="stepgroup" open={open}>
       <summary
-        className="stepgroup-head flex items-center gap-2 py-0.5 cursor-pointer select-none text-ui text-faint hover:text-muted"
+        className="stepgroup-head transcript-disclosure cursor-pointer select-none text-ui text-faint hover:text-muted"
         onClick={(e) => {
           e.preventDefault(); // drive open/closed from state, not the native toggle
           setUserToggle(!open);
         }}
       >
-        <span className={"chev inline-block transition-transform" + (open ? " rotate-90" : "")}>›</span>
+        <Icon name="chevronDown" size={12} />
         <span>
           <span>{running ? t("transcript.turn.running", { label: stepsLabel }) : stepsLabel}</span>
           {declined > 0 && (
@@ -537,7 +538,7 @@ export function Transcript({ items, running, streamingText, onRetry, onOpenConne
   // breakers (user, connector, notices, plan/dir requests…). Trailing assistant texts are the
   // ANSWER and render as bubbles after the group; interior assistant texts are narration and
   // stay inside. A run with no activity at all is just bubbles (unchanged chat behavior).
-  const blocks: Array<{ turn: TurnItem[]; live?: boolean } | { item: Item; i: number }> = [];
+  const blocks: Array<{ turn: TurnItem[]; live?: boolean } | { item: Item; i: number; sources?: MessageSource[]; steps?: Item[] }> = [];
   let run: TurnItem[] = [];
   const flush = (live = false) => {
     if (!run.length) return;
@@ -554,7 +555,8 @@ export function Transcript({ items, running, streamingText, onRetry, onOpenConne
     else turn.forEach((t) => blocks.push({ item: t, i: -1 }));
     answers.forEach((a) => blocks.push({ item: a, i: -1 }));
   };
-  items.forEach((item, i) => {
+  foldTeamUpdates(items).forEach(({ item, sources, steps }) => {
+    const i = items.indexOf(item);
     if (item.kind === "tool" || item.kind === "assistant" || (item.kind === "approval" && item.resolved))
       run.push(item);
     else if (
@@ -567,7 +569,7 @@ export function Transcript({ items, running, streamingText, onRetry, onOpenConne
       return;
     } else {
       flush();
-      blocks.push({ item, i });
+      blocks.push({ item, i, sources, steps });
     }
   });
   flush(!!running);
@@ -592,10 +594,14 @@ export function Transcript({ items, running, streamingText, onRetry, onOpenConne
             // Board wakes get their own collapsed-by-default card — a report,
             // not a foreign message (owner ask 2026-08-16).
             return item.source.connector === "board" ? (
-              <BoardWakeCard source={item.source} key={bi} />
+              <TeamUpdateLine sources={block.sources || [item.source]} key={bi}>
+                {!!block.steps?.length && <Transcript items={block.steps} onApprove={() => {}} onAllowAnyway={onAllowAnyway} />}
+              </TeamUpdateLine>
             ) : (
               <ConnectorMessageCard source={item.source} key={bi} />
             );
+          case "teamcreated":
+            return <TeamCreatedLine key={bi} workers={item.workers} />;
           case "user":
             return (
               <div className="group self-end max-w-[78%] flex flex-col items-end" key={bi}>

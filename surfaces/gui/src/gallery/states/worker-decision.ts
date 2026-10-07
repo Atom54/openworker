@@ -13,6 +13,13 @@ const decision = (worker: string, d: "allow" | "deny", note: string) => ({
 
 export const workerDecisionStates: CardState[] = [
   {
+    id: "reviewer-escalation", title: "Auto-approve needs human judgment", context: { mode: "auto-approve" },
+    payload: { ...decision("Sam", "allow", "Run the local verification."),
+      escalation: { kind: "reviewer_unsure", reason: "The command's target needs your confirmation." },
+      provenance: "",
+      worker_call: { worker: "Sam", tool: "run_shell", arguments: { command: "npm test" }, state: "pending" } },
+  },
+  {
     id: "lead-denies-command",
     title: "Lead denies a command",
     note: "The owner's case (2026-09-17): the worker is about to run something in a folder that is already finished. Both halves are visible; the buttons say what happens to the WORKER'S command.",

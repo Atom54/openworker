@@ -50,10 +50,12 @@ def test_swe_lead_can_answer_the_channels_it_listens_to():
     assert m.connectors == ("github", "slack") and m.can_chat is True
 
 
-def test_reviewer_and_swe_lead_ship(tmp_path, monkeypatch):
+def test_reviewer_ships_and_the_swe_team_is_held_back(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENWORKER_UNSHIPPED", raising=False)
     reg = PersonaRegistry(state_path=tmp_path / "personas.json")
     ids = [e["name"] for e in reg.sidebar()]
-    assert "reviewer" in ids and "swe-lead" in ids
-    # The SWE Lead's workers stay unshipped and unsurfaced; the lead staffs them anyway.
-    assert not any(i in ids for i in ("swe-worker", "design-worker", "test-worker"))
+    assert "reviewer" in ids
+    # The SWE Lead is held back for 0.3.0 (owner, 2026-09-29); its workers stay unshipped
+    # and unsurfaced too. On an internal build the lead is offered and staffs them anyway.
+    assert not any(i in ids for i in ("swe-lead", "swe-worker", "design-worker", "test-worker"))
+    assert reg.get("swe-lead") is not None  # still loaded: a team already running keeps working

@@ -124,6 +124,10 @@ export function itemsFromMessages(messages: ConversationMessage[]): Item[] {
                           : { kind: "notice", tone: "warn", text: "Error: " + (m.text || "unknown"), retriable: true },
       );
     }
+    if (m.role === "tool" && m._display?.team_created) {
+      const c = m._display.team_created;
+      if (c.team_id && Array.isArray(c.workers)) items.push({ kind: "teamcreated", teamId: c.team_id, workers: c.workers, ts: m.ts });
+    }
     // system messages are omitted; tool-result messages are folded into the tool row above
   }
   return items;

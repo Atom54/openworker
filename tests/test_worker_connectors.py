@@ -107,7 +107,8 @@ async def test_lead_suggestions_outside_the_default_set_need_the_users_words(man
     approve = manager.inbox_team_approver("lead-sid", "swe-lead")
     # No reason for Slack (outside swe-worker's default set) and Jira is not connected:
     # the proposal bounces back to the lead with what to do, and nothing is parked.
-    bounced = await approve({"members": [{"persona": "swe-worker", "name": "nia", "connectors": ["slack", "jira"]}]}, "t0")
+    from proposal_fixtures import team_proposal
+    bounced = await approve(team_proposal([{"persona": "swe-worker", "name": "nia", "connectors": ["slack", "jira"]}]), "t0")
     assert bounced["approved"] is False
     assert any("slack" in p and "quote" in p for p in bounced["problems"])
     assert any("jira" in p and "request_connector" in p for p in bounced["problems"])
@@ -115,7 +116,7 @@ async def test_lead_suggestions_outside_the_default_set_need_the_users_words(man
     # With the user's words as the reason it reaches the card, carrying what the card needs.
     members = [{"persona": "swe-worker", "name": "nia", "connectors": ["GitHub", "slack"],
                 "connector_reasons": {"github": "pushes the branch", "slack": 'you asked: "post the summary in Slack"'}}]
-    task = asyncio.create_task(approve({"members": members}, "t1"))
+    task = asyncio.create_task(approve(team_proposal(members), "t1"))
     for _ in range(50):
         await asyncio.sleep(0.02)
         pending = manager.inbox.list(session_id="lead-sid", state="pending")
@@ -381,7 +382,8 @@ async def test_staffing_gate_works_without_a_socket(manager):
 
     _lead(manager)
     approve = manager.inbox_team_approver("lead-sid", "swe-lead")
-    task = asyncio.create_task(approve({"members": [{"persona": "swe-worker", "name": "nia", "connectors": ["github"]}, {"persona": "test-worker", "name": "checks"}]}, "t1"))
+    from proposal_fixtures import team_proposal
+    task = asyncio.create_task(approve(team_proposal([{"persona": "swe-worker", "name": "nia", "connectors": ["github"]}, {"persona": "test-worker", "name": "checks"}]), "t1"))
     for _ in range(50):
         await asyncio.sleep(0.02)
         pending = [i for i in manager.inbox.list(session_id="lead-sid", state="pending") if i.title == "Create this team?"]
@@ -410,16 +412,18 @@ async def test_items_gate_and_connector_ask_work_without_a_socket(manager):
 
     _lead(manager)
     approve = manager.inbox_items_approver("lead-sid", "swe-lead")
-    task = asyncio.create_task(approve({"items": [{"title": "Cap the backoff", "criteria": "no wait exceeds maxDelayMs"}], "note": "one item is enough"}, "t2"))
+    from proposal_fixtures import work_proposal
+    proposal = work_proposal([{"title": "Cap the backoff", "criteria": "no wait exceeds maxDelayMs"}])
+    task = asyncio.create_task(approve(proposal, "t2"))
     for _ in range(50):
         await asyncio.sleep(0.02)
         pending = [i for i in manager.inbox.list(session_id="lead-sid", state="pending") if i.title.startswith("Approve the proposed")]
         if pending:
             break
-    assert pending and "Done when: no wait exceeds" in pending[0].body
+    assert pending and "Acceptance criteria: no wait exceeds" in pending[0].body
     assert (pending[0].data or {}).get("gate") == "items" and (pending[0].data or {})["items"][0]["title"] == "Cap the backoff"
     # The lead's note reaches the Inbox card too (it used to be inline only).
-    assert pending[0].data["note"] == "one item is enough"
+    assert pending[0].data["summary"] == proposal["summary"]
     manager.inbox.resolve(pending[0].id, '{"approved": true}')
     result = await task
     assert result.get("approved") is True or result.get("ok") is True
@@ -543,6 +547,8 @@ async def test_an_allow_and_a_manual_leads_denial_still_ask(tmp_path):
             return ApprovalOutcome.DENY
 
         engine = _lead_engine(tmp_path, mode, args, decided)
+        # The harness must resolve a real original action before allowing a proxy.
+        engine.delegated_approval = lambda _args: {"tool": "run_shell", "arguments": {"command": "git status"}, "context": {}, "reason": "requires approval"}
         engine.approver = deny  # the human says no: the lead's decision must not run
         events = await _run(engine)
         assert EventType.PERMISSION_REQUIRED in [e.type for e in events], (mode, decision)
@@ -553,6 +559,9 @@ def test_the_leads_approval_card_carries_the_workers_call(manager):
     """The parked approval for `decide_worker_call` shows WHAT the worker wants to run,
     looked up by call_id — not the id."""
     _lead(manager)
+    from coworker.teams.registry import TeamWorker
+    manager.teams.create(space="acme", lead_session="lead-sid", lead_actor="lead",
+        workers=[TeamWorker(actor="nia", persona="swe-worker", session_id="worker-sid")])
     parked = manager.inbox.add_approval(
         "worker-sid", "Run `run_shell`?", body="requires approval\ncommand: npm run build",
         data={"tool": "run_shell", "arguments": {"command": "npm run build"}},

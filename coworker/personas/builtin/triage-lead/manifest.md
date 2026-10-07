@@ -76,3 +76,5 @@ RULES OF THE WATCH:
 - Staff workers only when a filed item genuinely needs hands (a real investigation, a
   document to produce) — this is rare in triage; when in doubt, do not staff.
 - Instructions flow down, evidence flows up; the user outranks you everywhere.
+
+When mentioning a board task in your reply, write `[title](task:<id>)`; copy the `mention` returned by board tools. Do not use GitHub-style #numbers for task links.

@@ -3,6 +3,15 @@ import { test as base, expect, type Page } from "@playwright/test";
 // The app-wide /ws/events socket each page opened (UX-026 toast et al.) — specs
 // push server events through it via sendAppEvent below.
 const eventSockets = new WeakMap<Page, { send: (data: string) => void }>();
+const sessionSockets = new WeakMap<Page, { send: (data: string) => void }>();
+
+/** Simulate a session event caused by another viewer/API client. */
+export async function sendSessionEvent(page: Page, obj: unknown): Promise<void> {
+  for (let i = 0; i < 50 && !sessionSockets.get(page); i++) await page.waitForTimeout(100);
+  const ws = sessionSockets.get(page);
+  if (!ws) throw new Error("the app never opened its session socket");
+  ws.send(JSON.stringify(obj));
+}
 
 /** Push an app-wide event exactly as the server would over /ws/events. Waits for
  * the GUI to have connected its socket first. */
@@ -369,10 +378,10 @@ const PROVIDERS = [
   { name: "ark-agent-plan-cn", title: "Volcengine Ark Agent Plan", needs_key: true, blurb: "Uses Volcengine Ark Agent Plan's OpenAI-compatible Responses API — the endpoint is prefilled, just add your key.", fields: [{ key: "api_key", label: "Volcengine Ark Agent Plan API key", secret: true, required: true, help: "", placeholder: "" }, { key: "base_url", label: "Endpoint", secret: false, required: false, help: "Volcengine Ark Agent Plan's China (Beijing) endpoint.", placeholder: "https://ark.cn-beijing.volces.com/api/plan/v3", default: "https://ark.cn-beijing.volces.com/api/plan/v3" }], configured: false, values: {}, suggested_models: ["doubao-seed-evolving", "doubao-seed-2.1-turbo"], key_set_at: null, last_used_at: null },
   // ollama: keyless local provider — "configured" without proving anything runs; the
   // onboarding gallery shows "No key needed" and its form is endpoint + Detect (§39).
-  { name: "ollama", title: "Ollama (local models)", needs_key: false, fields: [{ key: "base_url", label: "Endpoint", secret: false, required: false, help: "", placeholder: "http://127.0.0.1:11434", default: "http://127.0.0.1:11434" }], configured: true, values: {}, suggested_models: ["qwen3-coder:30b"], key_set_at: null, last_used_at: null },
+  { name: "ollama", title: "Ollama (local models)", needs_key: false, kind: "local", fields: [{ key: "base_url", label: "Endpoint", secret: false, required: false, help: "", placeholder: "http://127.0.0.1:11434", default: "http://127.0.0.1:11434" }], configured: true, values: {}, suggested_models: ["qwen3-coder:30b"], key_set_at: null, last_used_at: null },
   // openai-codex: the subscription OAuth provider — no key form; the gallery card and
   // form render sign-in state instead (auth: "oauth"). Starts signed out.
-  { name: "openai-codex", title: "ChatGPT subscription", needs_key: false, auth: "oauth", signed_in: false, account: null, authorizing: false, last_error: null, blurb: "Sign in with your ChatGPT plan and run OpenAI models through your subscription — no API key. Tokens stay on this machine.", fields: [], configured: false, values: {}, suggested_models: ["gpt-5.6-sol"], key_set_at: null, last_used_at: null },
+  { name: "openai-codex", title: "ChatGPT subscription", needs_key: false, kind: "subscription", auth: "oauth", signed_in: false, account: null, authorizing: false, last_error: null, blurb: "Sign in with your ChatGPT plan and run OpenAI models through your subscription — no API key. Tokens stay on this machine.", fields: [], configured: false, values: {}, suggested_models: ["gpt-5.6-sol"], key_set_at: null, last_used_at: null },
 ];
 
 /** Install the API + WebSocket mocks on a page. Returns handles for assertions/seed data. */
@@ -670,6 +679,7 @@ export async function mockApi(page: import("@playwright/test").Page) {
   });
 
   await page.routeWebSocket(/\/ws\/session\//, (ws) => {
+    sessionSockets.set(page, ws);
     const send = (type: string, data: Record<string, unknown> = {}) =>
       ws.send(JSON.stringify({ type, data }));
     // The page's session id, from the socket URL — team approval stamps THIS session
@@ -759,16 +769,8 @@ export async function mockApi(page: import("@playwright/test").Page) {
           send("turn_done");
           return;
         }
-        if (/propose the split/i.test(msg.text)) {
-          send("items_proposed", {
-            items: [
-              { title: "Statement API endpoint", criteria: "returns opening/closing balances over the chosen range; 8 endpoint tests green; malformed, missing, and reversed date ranges return 400; draft invoices are excluded from issued totals; inclusive boundaries verified end to end" },
-              { title: "Statements dashboard page", criteria: "renders seeded data for Ada / Northgate; empty + error states covered" },
-              { title: "Statement totals reconcile", criteria: "running balance matches invoices minus payments for the range" },
-              { title: "Verification pass", criteria: "tester confirms page renders with live API data" },
-            ],
-            note: "Shared journal case: statements.",
-          });
+        if (/propose the split|propose security split/i.test(msg.text)) {
+          sendState("items_proposed", "work-items", /security/.test(msg.text) ? "security-plan" : "statements-split");
           return; // suspended on the items decision
         }
         // Agent teams (OPE-97): the staffing gate — the lead proposes a roster and
@@ -983,6 +985,10 @@ export async function mockApi(page: import("@playwright/test").Page) {
           send("assistant_message", { text: `Done via ${pendingTool} [decision=${msg.decision}]` });
         }
         send("turn_done");
+      } else if (msg.type === "question_response") {
+        // ask_user answered (card or composer): echo it so specs can see what arrived.
+        send("assistant_message", { text: `Got your answer: ${msg.answer}` });
+        send("turn_done");
       } else if (msg.type === "items_response") {
         if (msg.approved) {
           seedBoard(); // "created on the board" — the board fetch now shows them
@@ -1081,6 +1087,7 @@ export async function mockApi(page: import("@playwright/test").Page) {
         if (msg.mode === "auto-approve" && !anyWs.__modeNoticeShown) {
           anyWs.__modeNoticeShown = true;
           send("mode_notice", {
+            mode: msg.mode,
             title: "Auto-approve is on.",
             text:
               "Auto-approve uses a model to let routine actions through without asking; " +
@@ -1095,7 +1102,7 @@ export async function mockApi(page: import("@playwright/test").Page) {
             "bypass-approvals": "Bypass approvals",
             "auto-approve": "Auto-approve",
           };
-          send("mode_notice", { text: `${labels[msg.mode] || msg.mode} is on.` });
+          send("mode_notice", { text: `${labels[msg.mode] || msg.mode} is on.`, mode: msg.mode });
         }
       } else if (msg.type === "set_model") {
         // Mid-session switch: the server applies it and broadcasts the persisted marker.

@@ -17,6 +17,27 @@ const base: TeamReq = {
 describe("TeamRequestCard", () => {
   afterEach(cleanup);
 
+  it("keeps approval guidance collapsed and sends the exact human edit", () => {
+    const onRespond = vi.fn();
+    render(<TeamRequestCard item={{ ...base, members: [{ ...base.members[0], approval_guidance: "Run local tests. No pushes." }] }} onRespond={onRespond} />);
+    expect(screen.queryByLabelText(/Approval guidance/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+    const input = screen.getByLabelText(/Approval guidance/);
+    expect((input as HTMLTextAreaElement).value).toBe("Run local tests. No pushes.");
+    fireEvent.change(input, { target: { value: "Local tests only.\n No publishing." } });
+    fireEvent.click(screen.getByTestId("teamreq-approve"));
+    expect(onRespond.mock.calls[0][3][0].approval_guidance).toBe("Local tests only.\n No publishing.");
+  });
+
+  it("sends an explicitly cleared paragraph instead of restoring the lead suggestion", () => {
+    const onRespond = vi.fn();
+    render(<TeamRequestCard item={{ ...base, members: [{ ...base.members[0], approval_guidance: "Suggested actions" }] }} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+    fireEvent.change(screen.getByLabelText(/Approval guidance/), { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("teamreq-approve"));
+    expect(onRespond.mock.calls[0][3][0].approval_guidance).toBe("");
+  });
+
   it("puts name, persona and model on one line and the reason on its own", () => {
     render(<TeamRequestCard item={base} onRespond={vi.fn()} />);
     const row = screen.getByTestId("teamreq-row-0");
@@ -27,16 +48,16 @@ describe("TeamRequestCard", () => {
     expect(who?.contains(reason as Node)).toBe(false);
   });
 
-  it("labels the buttons Not now / Create team and moves the grant sentence into the title", () => {
+  it("requests actionable changes and makes staffing distinct from assignment", () => {
     const onRespond = vi.fn();
     render(<TeamRequestCard item={base} onRespond={onRespond} />);
     const approve = screen.getByTestId("teamreq-approve");
     expect(approve.textContent).toBe("Create team");
-    expect(approve.getAttribute("title")).toContain("Approving grants the lead create, assign & steer");
-    expect(approve.getAttribute("title")).toContain("Workers get only the connectors you tick.");
-    expect(screen.getByTestId("teamreq-card").textContent).not.toContain("Approving grants the lead");
-    fireEvent.click(screen.getByText("Not now"));
-    expect(onRespond).toHaveBeenCalledWith(false);
+    expect(screen.getByTestId("teamreq-card").textContent).toContain("does not start these tasks");
+    fireEvent.click(screen.getByText("Request changes"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Add independent verification" } });
+    fireEvent.click(screen.getByText("Send feedback"));
+    expect(onRespond).toHaveBeenCalledWith(false, "Add independent verification");
   });
 
   it("an unsuggested default connector starts unticked, with no reason; ticks ride the approval", () => {
