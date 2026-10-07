@@ -16,9 +16,6 @@ import llamacpp from "./logos/llamacpp.svg";
 import vllm from "./logos/vllm.svg";
 import bedrock from "./logos/bedrock.svg";
 import vertex from "./logos/vertex.svg";
-// azure.svg is a simplified in-house mark in the Azure blues (the lobe-icons set we vendor
-// the others from has no Azure AI Foundry entry).
-import azure from "./logos/azure.svg";
 import openrouter from "./logos/openrouter.svg";
 import fireworks from "./logos/fireworks.svg";
 import together from "./logos/together.svg";
@@ -46,7 +43,6 @@ export const PROVIDER_LOGOS: Record<string, string> = {
   vllm,
   bedrock,
   vertex,
-  azure,
   openrouter,
   // Same mark for the signed-in OpenRouter provider: same models, billed to the account.
   "openrouter-account": openrouter,
@@ -73,7 +69,6 @@ export const PROVIDER_ORDER = [
   "vllm",
   "bedrock",
   "vertex",
-  "azure",
   "openrouter",
   "openrouter-account",
   "fireworks",

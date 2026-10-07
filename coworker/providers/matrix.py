@@ -57,15 +57,6 @@ MATRIX: dict[str, ModelEntry] = {
     "gpt-5.6-terra": ModelEntry("GPT-5.6 Terra · OpenAI", _AGENTIC_VISION, 400_000),
     "gpt-5.6-luna": ModelEntry("GPT-5.6 Luna · OpenAI", _AGENTIC_VISION, 400_000),
     "gpt-5.5": ModelEntry("GPT-5.5 · OpenAI", _AGENTIC_VISION, 400_000),
-    # Azure AI Foundry: ids are the user's DEPLOYMENT names; the portal defaults them to the
-    # model id, so only the recommended one is listed. PDF unverified → pdf_support.py.
-    "azure:gpt-5.6-sol": ModelEntry(
-        "GPT-5.6 Sol · Azure",
-        ModelCapabilities(
-            tools=True, vision=True, parallel_tool_calls=True, streaming=True
-        ),
-        400_000,
-    ),
     # ChatGPT-subscription catalog (the `openai-codex` OAuth provider). Curated to the
     # ids the subscription backend actually serves; vision per the vendor's model docs,
     # PDF unverified over this backend → local fallback via pdf_support.py.

@@ -79,12 +79,6 @@ class ProviderRouter(ProviderClient):
                 return rest
         return model
 
-    def client_for(self, model: str) -> ProviderClient:
-        """The concrete client a model routes to. Callers that must know WHICH wire a model
-        speaks (per-call settings are provider-specific) ask here instead of re-deriving the
-        registry's build rules and drifting from them."""
-        return self._client_for(model)
-
     def invalidate(self, name: Optional[str] = None) -> None:
         """Drop cached client(s) so the next call rebuilds with fresh config."""
         with self._lock:
@@ -103,12 +97,8 @@ class ProviderRouter(ProviderClient):
         **settings: Any,
     ):
         self._note_use(model)
-        client = self._client_for(model)
-        return client.complete(
-            model=self._bare(model),
-            messages=messages,
-            tools=tools,
-            **settings,
+        return self._client_for(model).complete(
+            model=self._bare(model), messages=messages, tools=tools, **settings
         )
 
     def stream(
@@ -120,12 +110,8 @@ class ProviderRouter(ProviderClient):
         **settings: Any,
     ):
         self._note_use(model)
-        client = self._client_for(model)
-        return client.stream(
-            model=self._bare(model),
-            messages=messages,
-            tools=tools,
-            **settings,
+        return self._client_for(model).stream(
+            model=self._bare(model), messages=messages, tools=tools, **settings
         )
 
     def capabilities(self, model: str):

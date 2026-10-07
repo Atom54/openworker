@@ -47,15 +47,8 @@ from .base import (
 from .capabilities import capabilities_for
 from .openai_provider import resolve_api_key
 
-# Reasoning levels, as the GPT-5.6 family reports them ("Supported values are: 'none',
-# 'low', 'medium', 'high', and 'xhigh'" — live 400, 2026-08-01). The accepted set is
-# per-model, so a level this model rejects is dropped on retry rather than pre-filtered
-# away here; this set only keeps junk off the wire. `reasoning_effort` does NOT go
-# through the whitelist below — it is folded into the `reasoning` object.
-_EFFORT_LEVELS = {"none", "minimal", "low", "medium", "high", "xhigh"}
-
-# Request params passed through from model settings; everything else (frequency_penalty, …)
-# is dropped.
+# Request params passed through from model settings; everything else (frequency_penalty,
+# reasoning_effort — no effort knob in v1, the server default rides) is dropped.
 _SETTINGS_WHITELIST = {
     "temperature",
     "top_p",
@@ -76,16 +69,7 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
     Same contract as the Chat Completions retries: fix exactly what the server named.
     A dotted name (`reasoning.summary`) drops its top-level param.
     """
-    msg = str(exc).lower()
-    # An effort level this model doesn't take ("Unsupported value: 'minimal' is not
-    # supported with the 'gpt-5.6-terra-…' model") — the accepted set varies per model and
-    # per generation. Drop just the level, keeping `summary` so thinking still streams, and
-    # let the model's own default carry the turn instead of failing it.
-    if "reasoning.effort" in msg and isinstance(kwargs.get("reasoning"), dict):
-        if "effort" in kwargs["reasoning"]:
-            reasoning = {k: v for k, v in kwargs["reasoning"].items() if k != "effort"}
-            return {**kwargs, "reasoning": reasoning}
-    match = _UNSUPPORTED_PARAM.search(msg)
+    match = _UNSUPPORTED_PARAM.search(str(exc).lower())
     if match:
         param = match.group(1).split(".", 1)[0].split("[", 1)[0]
         if param in kwargs and param not in ("model", "input"):
@@ -325,16 +309,14 @@ class OpenAIResponsesProvider(ProviderClient):
         *,
         default_model: str = "gpt-5.6-sol",
         api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
         secrets: Any = None,
+        base_url: Optional[str] = None,
         reasoning_summary: bool = True,
     ):
         # Same deferred-client contract as OpenAIProvider: built lazily so an engine can be
         # assembled before any key exists; key resolves at call time (explicit → env →
         # SecretStore). Tests inject a `client` directly. `base_url` is opt-in: stock OpenAI
-        # leaves it unset, while the endpoints that implement this API besides OpenAI supply
-        # their own — Azure AI Foundry's `/openai/v1` answers /responses with tools +
-        # reasoning.effort (verified live 2026-07-28).
+        # leaves it unset, while Responses-compatible vendors can supply their own endpoint.
         self._client = client
         self._api_key = api_key
         self._secrets = secrets
@@ -355,7 +337,7 @@ class OpenAIResponsesProvider(ProviderClient):
                     "No model API key configured. Set OPENAI_API_KEY in the environment, "
                     "or add your key in Manage → Settings."
                 )
-            kwargs: dict[str, Any] = {"api_key": key}
+            kwargs = {"api_key": key}
             if self._base_url:
                 kwargs["base_url"] = self._base_url
             self._client = OpenAI(**kwargs)
@@ -372,15 +354,6 @@ class OpenAIResponsesProvider(ProviderClient):
         instructions, items = convert_messages(messages)
         if "max_tokens" in settings and "max_output_tokens" not in settings:
             settings = {**settings, "max_output_tokens": settings["max_tokens"]}
-        # `reasoning_effort` is the caller-facing name (same spelling Chat Completions uses);
-        # on this API it belongs INSIDE the `reasoning` object. Absent → the server default
-        # rides, which is what every interactive session still does. An unknown level would
-        # 400, so only the documented ones are forwarded.
-        # Summaries are opt-out per provider (Ark 400s on them); the effort level is not.
-        reasoning: dict[str, Any] = {"summary": "auto"} if self._reasoning_summary else {}
-        effort = str(settings.get("reasoning_effort") or "").strip().lower()
-        if effort in _EFFORT_LEVELS:
-            reasoning["effort"] = effort
         kwargs: dict[str, Any] = {
             "model": model,
             "input": items,
@@ -390,8 +363,8 @@ class OpenAIResponsesProvider(ProviderClient):
             "include": ["reasoning.encrypted_content"],
             **{k: v for k, v in settings.items() if k in _SETTINGS_WHITELIST},
         }
-        if reasoning:
-            kwargs["reasoning"] = reasoning
+        if self._reasoning_summary:
+            kwargs["reasoning"] = {"summary": "auto"}
         if instructions:
             kwargs["instructions"] = instructions
         if tools:

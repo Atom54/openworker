@@ -38,7 +38,6 @@ export const KEY_HELP: Record<string, { url: string; label: string; labelKey?: s
   "ark-agent-plan-cn": { url: "https://console.volcengine.com/ark/region:cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentPlan", label: "console.volcengine.com" },
   openrouter: { url: "https://openrouter.ai/keys", label: "openrouter.ai" },
   bedrock: { url: "https://console.aws.amazon.com/bedrock/home#/api-keys", label: "the AWS Bedrock console", labelKey: "misc.provider.bedrock_console" },
-  azure: { url: "https://ai.azure.com", label: "the Azure AI Foundry portal" },
   fireworks: { url: "https://fireworks.ai/account/api-keys", label: "fireworks.ai" },
   together: { url: "https://api.together.xyz/settings/api-keys", label: "together.xyz" },
   zai: { url: "https://z.ai/manage-apikey/apikey-list", label: "z.ai" },
