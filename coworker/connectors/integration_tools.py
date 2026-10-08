@@ -1163,23 +1163,25 @@ def make_integration_tools(
         )
     )
 
+    def _gmail_raw(to: str, subject: str, body: str, cc: str) -> str:
+        msg = EmailMessage()
+        msg["To"], msg["Subject"] = to, subject
+        if cc:
+            msg["Cc"] = cc
+        msg.set_content(body)
+        return base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
+
     def gmail_send_email(
         to: str, subject: str, body: str, cc: str = "", account: str = ""
     ) -> dict[str, Any]:
         email, profile, err = _gmail_profile(secrets, account)
         if err:
             return err
-        msg = EmailMessage()
-        msg["To"], msg["Subject"] = to, subject
-        if cc:
-            msg["Cc"] = cc
-        msg.set_content(body)
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
         result = _request(
             "POST",
             "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
             headers=_google_headers(profile["access_token"]),
-            json={"raw": raw},
+            json={"raw": _gmail_raw(to, subject, body, cc)},
         )
         if result.get("ok"):
             result["account"] = email
@@ -1193,6 +1195,45 @@ def make_integration_tools(
                 "gmail_send_email",
                 "Send an email through Gmail. Requires user approval; the "
                 "`account` argument names the sending mailbox on the approval card.",
+                {
+                    "to": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "cc": {"type": "string"},
+                    "account": _ACCOUNT_PROP,
+                },
+                ["to", "subject", "body"],
+            ),
+            approval=True,
+            caps=["gmail", "write"],
+        )
+    )
+
+    def gmail_create_draft(
+        to: str, subject: str, body: str, cc: str = "", account: str = ""
+    ) -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        result = _request(
+            "POST",
+            "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+            headers=_google_headers(profile["access_token"]),
+            json={"message": {"raw": _gmail_raw(to, subject, body, cc)}},
+        )
+        if result.get("ok"):
+            result["account"] = email
+        return result
+
+    gmail_create_draft.__name__ = "gmail_create_draft"
+    tools.append(
+        _attach(
+            gmail_create_draft,
+            _schema(
+                "gmail_create_draft",
+                "Save an email as a draft in Gmail without sending it; the user "
+                "reviews and sends it from Gmail. Requires a Google sign-in that "
+                "granted the compose scope (reconnect the account if it 403s).",
                 {
                     "to": {"type": "string"},
                     "subject": {"type": "string"},

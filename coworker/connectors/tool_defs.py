@@ -283,6 +283,13 @@ TOOL_DEFS: tuple[ConnectorToolDef, ...] = (
         target_arg="to",
     ),
     ConnectorToolDef(
+        "gmail",
+        "gmail_create_draft",
+        "Create draft",
+        "write",
+        "Save an email as a Gmail draft without sending it.",
+    ),
+    ConnectorToolDef(
         "google_calendar",
         "gcal_list_events",
         "List events",

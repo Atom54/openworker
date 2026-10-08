@@ -59,6 +59,8 @@ SCOPES: dict[str, tuple[str, ...]] = {
     "gmail": (
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.send",
+        # gmail_create_draft — drafts.create isn't covered by gmail.send.
+        "https://www.googleapis.com/auth/gmail.compose",
     ),
     "google_calendar": ("https://www.googleapis.com/auth/calendar",),
     "google_drive": ("https://www.googleapis.com/auth/drive.readonly",),
