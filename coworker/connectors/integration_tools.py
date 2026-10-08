@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import base64
 import datetime as _dt
+import email as email_lib
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from email.message import EmailMessage
+from html import escape
 from html.parser import HTMLParser
 from typing import Any, Callable, Optional
 from urllib.parse import quote
@@ -21,7 +24,14 @@ import aisuite as ai
 from ..secrets import SecretStore
 from ..web.guard import get_checked
 from .browser_automation import make_browser_automation_tools
-from .email_tools import make_email_tools
+from .email_tools import (
+    attach_files,
+    decode_mime_header,
+    extract_text_body,
+    list_attachment_parts,
+    make_email_tools,
+    save_attachment,
+)
 from .tool_defs import approval_for_tool, connector_for_tool
 
 
@@ -1051,58 +1061,166 @@ def make_integration_tools(
         "type": "string",
         "description": "Mailbox email to use; omit for the default account.",
     }
+    _GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
+    _GMAIL_MAX_RESULTS = 20
+    _GMAIL_THREAD_MAX = 25
+    # Per message in a thread: replies quote everything above them, so a long
+    # conversation would otherwise repeat itself up to the token budget.
+    _GMAIL_THREAD_BODY_CHARS = 6_000
+
+    def _gmail_not_found(hidden: int = 1) -> dict[str, Any]:
+        # Indistinguishable from a real miss — the agent must not be able to
+        # tell "filtered" from "gone" (a tombstone invites probing).
+        return {
+            "error": "HTTP 404",
+            "details": {"error": {"code": 404, "message": "Not Found"}},
+            "_display": {"hidden_by_filters": hidden, "connector": "gmail"},
+        }
+
+    def _gmail_fetch(
+        token: str, message_id: str, filters, label_map: dict[str, str]
+    ) -> tuple[dict[str, Any], Any, Optional[dict[str, Any]]]:
+        """(api data, parsed MIME message, err) for one message, fetched raw so
+        the stdlib parser does the decoding; filtered messages read as a 404."""
+        result = _request(
+            "GET",
+            f"{_GMAIL}/messages/{message_id}",
+            headers=_google_headers(token),
+            params={"format": "raw"},
+        )
+        if not result.get("ok"):
+            return {}, None, result
+        data = result.get("data") or {}
+        raw = str(data.get("raw") or "")
+        msg = email_lib.message_from_bytes(
+            base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+        )
+        shim = {
+            "labelIds": data.get("labelIds") or [],
+            "payload": {"headers": [{"name": "From", "value": msg.get("From", "")}]},
+        }
+        if filters and _gmail_is_hidden(shim, filters, label_map):
+            return {}, None, _gmail_not_found()
+        return data, msg, None
+
+    def _gmail_view(
+        data: dict[str, Any],
+        msg: Any,
+        label_map: dict[str, str],
+        body_chars: Optional[int] = None,
+    ) -> dict[str, Any]:
+        def h(name: str) -> str:
+            return decode_mime_header(msg.get(name, ""))
+
+        body = extract_text_body(msg)
+        if body_chars and len(body) > body_chars:
+            body = body[:body_chars] + "\n…[truncated]"
+        return {
+            "id": data.get("id"),
+            "thread_id": data.get("threadId"),
+            "labels": [label_map.get(i, i) for i in data.get("labelIds") or []],
+            "from": h("From"),
+            "reply_to": h("Reply-To"),
+            "to": h("To"),
+            "cc": h("Cc"),
+            "date": h("Date"),
+            "subject": h("Subject"),
+            "body": body,
+            "attachments": [
+                {
+                    "filename": name,
+                    "content_type": part.get_content_type(),
+                    "size": len(part.get_payload(decode=True) or b""),
+                }
+                for name, part in list_attachment_parts(msg)
+            ],
+        }
+
+    def _gmail_envelopes(
+        token: str, ids: list[str], filters, label_map: dict[str, str]
+    ) -> tuple[list[dict[str, Any]], int]:
+        """(envelopes, hidden count): headers + snippet per id, without bodies."""
+
+        def meta(mid: str) -> dict[str, Any]:
+            return _request(
+                "GET",
+                f"{_GMAIL}/messages/{mid}",
+                headers=_google_headers(token),
+                params={
+                    "format": "metadata",
+                    "metadataHeaders": ["From", "To", "Subject", "Date"],
+                },
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            metas = list(pool.map(meta, ids))
+        out, hidden = [], 0
+        for mid, res in zip(ids, metas):
+            detail = res.get("data") if res.get("ok") else None
+            if not isinstance(detail, dict):
+                # Fail-open on a metadata miss: an id alone reveals nothing, and
+                # every content read re-enforces the filters.
+                out.append({"id": mid})
+                continue
+            if filters and _gmail_is_hidden(detail, filters, label_map):
+                hidden += 1
+                continue
+            hdrs = {
+                str(x.get("name", "")).lower(): str(x.get("value") or "")
+                for x in (detail.get("payload") or {}).get("headers") or []
+            }
+            labels = detail.get("labelIds") or []
+            out.append(
+                {
+                    "id": mid,
+                    "thread_id": detail.get("threadId"),
+                    "from": decode_mime_header(hdrs.get("from", "")),
+                    "to": decode_mime_header(hdrs.get("to", "")),
+                    "subject": decode_mime_header(hdrs.get("subject", "")),
+                    "date": hdrs.get("date", ""),
+                    "snippet": detail.get("snippet", ""),
+                    "labels": [label_map.get(i, i) for i in labels],
+                    "unread": "UNREAD" in labels,
+                }
+            )
+        return out, hidden
 
     def gmail_search_messages(
-        query: str, max_results: int = 10, account: str = ""
+        query: str, max_results: int = 10, page_token: str = "", account: str = ""
     ) -> dict[str, Any]:
         email, profile, err = _gmail_profile(secrets, account)
         if err:
             return err
         token = profile["access_token"]
+        params: dict[str, Any] = {
+            "q": query,
+            "maxResults": max(1, min(int(max_results or 10), _GMAIL_MAX_RESULTS)),
+        }
+        if page_token:
+            params["pageToken"] = page_token
         result = _request(
             "GET",
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            f"{_GMAIL}/messages",
             headers=_google_headers(token),
-            params={"q": query, "maxResults": max(1, min(int(max_results or 10), 20))},
+            params=params,
         )
+        if not result.get("ok"):
+            return result
+        data = dict(result.get("data") or {})
         filters = _gmail_filters(secrets)
-        if result.get("ok") and filters:
-            # Enforce "Never show agents" HERE, silently: matching hits are
-            # omitted (no tombstone); the count rides the `_display` sidecar for
-            # the user's tool card + audit — never the agent-visible content.
-            data = dict(result.get("data") or {})
-            label_map = _gmail_label_map(token) if filters["labels"] else {}
-            kept, hidden = [], 0
-            for m in data.get("messages") or []:
-                meta = _request(
-                    "GET",
-                    f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{m.get('id')}",
-                    headers=_google_headers(token),
-                    params={"format": "metadata", "metadataHeaders": "From"},
-                )
-                detail = meta.get("data") if meta.get("ok") else None
-                # Fail-open on a metadata miss: ids alone reveal nothing, and
-                # gmail_get_message re-enforces before any content flows.
-                if isinstance(detail, dict) and _gmail_is_hidden(
-                    detail, filters, label_map
-                ):
-                    hidden += 1
-                else:
-                    kept.append(m)
-            if hidden:
-                data["messages"] = kept
-                if isinstance(data.get("resultSizeEstimate"), int):
-                    data["resultSizeEstimate"] = max(
-                        0, data["resultSizeEstimate"] - hidden
-                    )
-                result = {
-                    "ok": True,
-                    "data": data,
-                    "_display": {"hidden_by_filters": hidden, "connector": "gmail"},
-                }
-        if result.get("ok"):
-            result["account"] = email
-        return result
+        label_map = _gmail_label_map(token)
+        # Enforce "Never show agents" HERE, silently: matching hits are omitted
+        # (no tombstone); the count rides the `_display` sidecar for the user's
+        # tool card + audit — never the agent-visible content.
+        data["messages"], hidden = _gmail_envelopes(
+            token, [m.get("id") for m in data.get("messages") or []], filters, label_map
+        )
+        out: dict[str, Any] = {"ok": True, "data": data, "account": email}
+        if hidden:
+            if isinstance(data.get("resultSizeEstimate"), int):
+                data["resultSizeEstimate"] = max(0, data["resultSizeEstimate"] - hidden)
+            out["_display"] = {"hidden_by_filters": hidden, "connector": "gmail"}
+        return out
 
     gmail_search_messages.__name__ = "gmail_search_messages"
     tools.append(
@@ -1110,10 +1228,14 @@ def make_integration_tools(
             gmail_search_messages,
             _schema(
                 "gmail_search_messages",
-                "Search Gmail messages using Gmail query syntax.",
+                "Search Gmail messages using Gmail query syntax. Returns envelopes "
+                "(id, thread_id, from, to, subject, date, snippet, labels, unread); "
+                "read bodies with gmail_get_message or gmail_get_thread. Pass back "
+                "`nextPageToken` as page_token for more.",
                 {
                     "query": {"type": "string"},
-                    "max_results": {"type": "integer"},
+                    "max_results": {"type": "integer", "description": "Max 20."},
+                    "page_token": {"type": "string"},
                     "account": _ACCOUNT_PROP,
                 },
                 ["query"],
@@ -1127,27 +1249,13 @@ def make_integration_tools(
         if err:
             return err
         token = profile["access_token"]
-        result = _request(
-            "GET",
-            f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
-            headers=_google_headers(token),
-            params={"format": "full"},
+        label_map = _gmail_label_map(token)
+        data, msg, err = _gmail_fetch(
+            token, message_id, _gmail_filters(secrets), label_map
         )
-        filters = _gmail_filters(secrets)
-        if result.get("ok") and filters:
-            data = result.get("data") or {}
-            label_map = _gmail_label_map(token) if filters["labels"] else {}
-            if isinstance(data, dict) and _gmail_is_hidden(data, filters, label_map):
-                # Indistinguishable from a real miss — the agent must not be able
-                # to tell "filtered" from "gone" (a tombstone invites probing).
-                return {
-                    "error": "HTTP 404",
-                    "details": {"error": {"code": 404, "message": "Not Found"}},
-                    "_display": {"hidden_by_filters": 1, "connector": "gmail"},
-                }
-        if result.get("ok"):
-            result["account"] = email
-        return result
+        if err:
+            return err
+        return {"ok": True, "data": _gmail_view(data, msg, label_map), "account": email}
 
     gmail_get_message.__name__ = "gmail_get_message"
     tools.append(
@@ -1155,7 +1263,9 @@ def make_integration_tools(
             gmail_get_message,
             _schema(
                 "gmail_get_message",
-                "Read a Gmail message by ID.",
+                "Read a Gmail message by ID: headers (from, reply_to, to, cc, date, "
+                "subject), decoded text body, labels, and attachment names/sizes "
+                "(save one with gmail_download_attachment).",
                 {"message_id": {"type": "string"}, "account": _ACCOUNT_PROP},
                 ["message_id"],
             ),
@@ -1163,25 +1273,247 @@ def make_integration_tools(
         )
     )
 
-    def _gmail_raw(to: str, subject: str, body: str, cc: str) -> str:
+    def gmail_get_thread(thread_id: str, account: str = "") -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        token = profile["access_token"]
+        result = _request(
+            "GET",
+            f"{_GMAIL}/threads/{thread_id}",
+            headers=_google_headers(token),
+            params={"format": "minimal"},
+        )
+        if not result.get("ok"):
+            return result
+        ids = [m.get("id") for m in (result.get("data") or {}).get("messages") or []]
+        # ponytail: one raw fetch per message; the newest 25 is plenty for a reply.
+        ids = ids[-_GMAIL_THREAD_MAX:]
+        filters = _gmail_filters(secrets)
+        label_map = _gmail_label_map(token)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            fetched = list(
+                pool.map(lambda i: _gmail_fetch(token, i, filters, label_map), ids)
+            )
+        messages, hidden = [], 0
+        for data, msg, ferr in fetched:
+            if ferr:
+                hidden += 1 if "_display" in ferr else 0
+                continue
+            messages.append(_gmail_view(data, msg, label_map, _GMAIL_THREAD_BODY_CHARS))
+        if not messages:
+            return _gmail_not_found(hidden) if hidden else {"error": "empty thread"}
+        out: dict[str, Any] = {
+            "ok": True,
+            "data": {"thread_id": thread_id, "messages": messages},
+            "account": email,
+        }
+        if hidden:
+            out["_display"] = {"hidden_by_filters": hidden, "connector": "gmail"}
+        return out
+
+    gmail_get_thread.__name__ = "gmail_get_thread"
+    tools.append(
+        _attach(
+            gmail_get_thread,
+            _schema(
+                "gmail_get_thread",
+                "Read a whole Gmail conversation by thread ID, oldest first: every "
+                "message's headers, text body and attachment names.",
+                {"thread_id": {"type": "string"}, "account": _ACCOUNT_PROP},
+                ["thread_id"],
+            ),
+            caps=["gmail", "read"],
+        )
+    )
+
+    def gmail_download_attachment(
+        message_id: str, filename: str, account: str = ""
+    ) -> dict[str, Any]:
+        scratch = roots[0] if roots else None
+        if scratch is None or not scratch.writable:
+            return {
+                "error": "no writable session directory to save the attachment into"
+            }
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        token = profile["access_token"]
+        _data, msg, err = _gmail_fetch(
+            token, message_id, _gmail_filters(secrets), _gmail_label_map(token)
+        )
+        if err:
+            return err
+        return save_attachment(msg, filename, scratch.path)
+
+    gmail_download_attachment.__name__ = "gmail_download_attachment"
+    tools.append(
+        _attach(
+            gmail_download_attachment,
+            _schema(
+                "gmail_download_attachment",
+                "Save one attachment of a Gmail message into the session's primary "
+                "directory and return the saved path. Requires user approval.",
+                {
+                    "message_id": {"type": "string"},
+                    "filename": {
+                        "type": "string",
+                        "description": "Attachment filename as listed by gmail_get_message.",
+                    },
+                    "account": _ACCOUNT_PROP,
+                },
+                ["message_id", "filename"],
+            ),
+            approval=True,
+            caps=["gmail", "read"],
+        )
+    )
+
+    def _gmail_signature(token: str) -> str:
+        """HTML signature of the default send-as identity ("" when none)."""
+        result = _request(
+            "GET", f"{_GMAIL}/settings/sendAs", headers=_google_headers(token)
+        )
+        identities = (
+            (result.get("data") or {}).get("sendAs") or [] if result.get("ok") else []
+        )
+        for pick in ("isDefault", "isPrimary"):
+            for ident in identities:
+                if ident.get(pick):
+                    return str(ident.get("signature") or "")
+        return ""
+
+    def _gmail_reply_context(
+        token: str, reply_to_message_id: str
+    ) -> tuple[dict[str, str], Optional[dict[str, Any]]]:
+        data, msg, err = _gmail_fetch(
+            token,
+            reply_to_message_id,
+            _gmail_filters(secrets),
+            _gmail_label_map(token),
+        )
+        if err:
+            return {}, err
+        ctx = {"threadId": str(data.get("threadId") or "")}
+        if mid := str(msg.get("Message-ID", "")).strip():
+            ctx["In-Reply-To"] = mid
+            ctx["References"] = f"{msg.get('References', '')} {mid}".strip()
+        # Gmail only threads when the subject matches the original's.
+        if subject := decode_mime_header(msg.get("Subject", "")):
+            ctx["subject"] = (
+                subject if subject.lower().startswith("re:") else f"Re: {subject}"
+            )
+        return ctx, None
+
+    _COMPOSE_PROPS: dict[str, Any] = {
+        "to": {
+            "type": "string",
+            "description": "Recipient address(es), comma-separated.",
+        },
+        "subject": {
+            "type": "string",
+            "description": "Ignored when replying (becomes 'Re: <original>').",
+        },
+        "body": {"type": "string", "description": "Plain-text body."},
+        "cc": {"type": "string"},
+        "bcc": {"type": "string"},
+        "body_html": {
+            "type": "string",
+            "description": "Optional HTML version of the body (formatting, links).",
+        },
+        "attachments": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Paths within the session's directories to attach.",
+        },
+        "reply_to_message_id": {
+            "type": "string",
+            "description": "Gmail message ID to reply to: threads the email under "
+            "that conversation. For reply-all, copy the original's other "
+            "recipients into cc yourself. Omit for a new email.",
+        },
+        "include_signature": {
+            "type": "boolean",
+            "description": "Append the account's Gmail signature (default true).",
+        },
+        "account": _ACCOUNT_PROP,
+    }
+
+    def _gmail_compose(
+        token: str,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str,
+        bcc: str,
+        body_html: str,
+        attachments: Optional[list[str]],
+        reply_to_message_id: str,
+        include_signature: bool,
+        thread: Optional[dict[str, str]] = None,
+    ) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+        """(Gmail API message payload, err). `thread` carries the threadId /
+        In-Reply-To / References / subject that keep a reply in its conversation."""
+        if reply_to_message_id:
+            thread, err = _gmail_reply_context(token, reply_to_message_id)
+            if err:
+                return {}, err
+        thread = thread or {}
         msg = EmailMessage()
-        msg["To"], msg["Subject"] = to, subject
+        msg["To"] = to
+        msg["Subject"] = thread.get("subject") or subject
         if cc:
             msg["Cc"] = cc
-        msg.set_content(body)
-        return base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
+        if bcc:
+            msg["Bcc"] = bcc  # Gmail delivers to Bcc and strips the header.
+        for name in ("In-Reply-To", "References"):
+            if thread.get(name):
+                msg[name] = thread[name]
+        # The API doesn't add the signature the Gmail UI would; mirror it.
+        sig = _gmail_signature(token) if include_signature else ""
+        msg.set_content(body + (f"\n\n-- \n{_html_to_text(sig)}" if sig else ""))
+        if body_html or sig:
+            rich = body_html or escape(body).replace("\n", "<br>\n")
+            if sig:
+                rich += f'<br><br><div class="gmail_signature">{sig}</div>'
+            msg.add_alternative(rich, subtype="html")
+        att_err = attach_files(msg, attachments, roots)
+        if att_err:
+            return {}, {"error": att_err}
+        payload: dict[str, Any] = {
+            "raw": base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
+        }
+        if thread.get("threadId"):
+            payload["threadId"] = thread["threadId"]
+        return payload, None
 
     def gmail_send_email(
-        to: str, subject: str, body: str, cc: str = "", account: str = ""
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        bcc: str = "",
+        body_html: str = "",
+        attachments: Optional[list[str]] = None,
+        reply_to_message_id: str = "",
+        include_signature: bool = True,
+        account: str = "",
     ) -> dict[str, Any]:
         email, profile, err = _gmail_profile(secrets, account)
         if err:
             return err
+        token = profile["access_token"]
+        message, err = _gmail_compose(
+            token, to, subject, body, cc, bcc, body_html, attachments,
+            reply_to_message_id, include_signature,
+        )  # fmt: skip
+        if err:
+            return err
         result = _request(
             "POST",
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-            headers=_google_headers(profile["access_token"]),
-            json={"raw": _gmail_raw(to, subject, body, cc)},
+            f"{_GMAIL}/messages/send",
+            headers=_google_headers(token),
+            json=message,
         )
         if result.get("ok"):
             result["account"] = email
@@ -1195,13 +1527,7 @@ def make_integration_tools(
                 "gmail_send_email",
                 "Send an email through Gmail. Requires user approval; the "
                 "`account` argument names the sending mailbox on the approval card.",
-                {
-                    "to": {"type": "string"},
-                    "subject": {"type": "string"},
-                    "body": {"type": "string"},
-                    "cc": {"type": "string"},
-                    "account": _ACCOUNT_PROP,
-                },
+                _COMPOSE_PROPS,
                 ["to", "subject", "body"],
             ),
             approval=True,
@@ -1210,16 +1536,32 @@ def make_integration_tools(
     )
 
     def gmail_create_draft(
-        to: str, subject: str, body: str, cc: str = "", account: str = ""
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        bcc: str = "",
+        body_html: str = "",
+        attachments: Optional[list[str]] = None,
+        reply_to_message_id: str = "",
+        include_signature: bool = True,
+        account: str = "",
     ) -> dict[str, Any]:
         email, profile, err = _gmail_profile(secrets, account)
         if err:
             return err
+        token = profile["access_token"]
+        message, err = _gmail_compose(
+            token, to, subject, body, cc, bcc, body_html, attachments,
+            reply_to_message_id, include_signature,
+        )  # fmt: skip
+        if err:
+            return err
         result = _request(
             "POST",
-            "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
-            headers=_google_headers(profile["access_token"]),
-            json={"message": {"raw": _gmail_raw(to, subject, body, cc)}},
+            f"{_GMAIL}/drafts",
+            headers=_google_headers(token),
+            json={"message": message},
         )
         if result.get("ok"):
             result["account"] = email
@@ -1234,14 +1576,290 @@ def make_integration_tools(
                 "Save an email as a draft in Gmail without sending it; the user "
                 "reviews and sends it from Gmail. Requires a Google sign-in that "
                 "granted the compose scope (reconnect the account if it 403s).",
+                _COMPOSE_PROPS,
+                ["to", "subject", "body"],
+            ),
+            approval=True,
+            caps=["gmail", "write"],
+        )
+    )
+
+    def gmail_list_drafts(
+        max_results: int = 10, page_token: str = "", account: str = ""
+    ) -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        token = profile["access_token"]
+        params: dict[str, Any] = {
+            "maxResults": max(1, min(int(max_results or 10), _GMAIL_MAX_RESULTS))
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        result = _request(
+            "GET", f"{_GMAIL}/drafts", headers=_google_headers(token), params=params
+        )
+        if not result.get("ok"):
+            return result
+        data = result.get("data") or {}
+        drafts = data.get("drafts") or []
+        envelopes, hidden = _gmail_envelopes(
+            token,
+            [(d.get("message") or {}).get("id") for d in drafts],
+            _gmail_filters(secrets),
+            _gmail_label_map(token),
+        )
+        draft_of = {(d.get("message") or {}).get("id"): d.get("id") for d in drafts}
+        out: dict[str, Any] = {
+            "ok": True,
+            "data": {
+                "drafts": [
+                    {"draft_id": draft_of.get(e["id"]), "message_id": e["id"], **e}
+                    for e in envelopes
+                ],
+                "nextPageToken": data.get("nextPageToken"),
+            },
+            "account": email,
+        }
+        if hidden:
+            out["_display"] = {"hidden_by_filters": hidden, "connector": "gmail"}
+        return out
+
+    gmail_list_drafts.__name__ = "gmail_list_drafts"
+    tools.append(
+        _attach(
+            gmail_list_drafts,
+            _schema(
+                "gmail_list_drafts",
+                "List Gmail drafts (draft_id, message_id, to, subject, date, "
+                "snippet). Read one in full with gmail_get_message(message_id).",
                 {
-                    "to": {"type": "string"},
-                    "subject": {"type": "string"},
-                    "body": {"type": "string"},
-                    "cc": {"type": "string"},
+                    "max_results": {"type": "integer", "description": "Max 20."},
+                    "page_token": {"type": "string"},
                     "account": _ACCOUNT_PROP,
                 },
-                ["to", "subject", "body"],
+                [],
+            ),
+            caps=["gmail", "read"],
+        )
+    )
+
+    def gmail_update_draft(
+        draft_id: str,
+        to: str,
+        subject: str,
+        body: str,
+        cc: str = "",
+        bcc: str = "",
+        body_html: str = "",
+        attachments: Optional[list[str]] = None,
+        reply_to_message_id: str = "",
+        include_signature: bool = True,
+        account: str = "",
+    ) -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        token = profile["access_token"]
+        thread: dict[str, str] = {}
+        if not reply_to_message_id:
+            # Keep a reply draft in its conversation when the caller only
+            # rewrites the text.
+            current = _request(
+                "GET",
+                f"{_GMAIL}/drafts/{draft_id}",
+                headers=_google_headers(token),
+                params={"format": "raw"},
+            )
+            if not current.get("ok"):
+                return current
+            cur = (current.get("data") or {}).get("message") or {}
+            raw = str(cur.get("raw") or "")
+            old = email_lib.message_from_bytes(
+                base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+            )
+            if old.get("In-Reply-To"):
+                thread = {
+                    "threadId": str(cur.get("threadId") or ""),
+                    "In-Reply-To": str(old["In-Reply-To"]),
+                    "References": str(old.get("References", "")),
+                    "subject": decode_mime_header(old.get("Subject", "")),
+                }
+        message, err = _gmail_compose(
+            token, to, subject, body, cc, bcc, body_html, attachments,
+            reply_to_message_id, include_signature, thread,
+        )  # fmt: skip
+        if err:
+            return err
+        result = _request(
+            "PUT",
+            f"{_GMAIL}/drafts/{draft_id}",
+            headers=_google_headers(token),
+            json={"id": draft_id, "message": message},
+        )
+        if result.get("ok"):
+            result["account"] = email
+        return result
+
+    gmail_update_draft.__name__ = "gmail_update_draft"
+    tools.append(
+        _attach(
+            gmail_update_draft,
+            _schema(
+                "gmail_update_draft",
+                "Replace a Gmail draft's content (fix a draft instead of creating "
+                "another). Pass the full new email; a reply draft stays in its "
+                "conversation.",
+                {"draft_id": {"type": "string"}, **_COMPOSE_PROPS},
+                ["draft_id", "to", "subject", "body"],
+            ),
+            approval=True,
+            caps=["gmail", "write"],
+        )
+    )
+
+    def gmail_delete_draft(draft_id: str, account: str = "") -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        result = _request(
+            "DELETE",
+            f"{_GMAIL}/drafts/{draft_id}",
+            headers=_google_headers(profile["access_token"]),
+        )
+        if result.get("ok"):
+            result["account"] = email
+        return result
+
+    gmail_delete_draft.__name__ = "gmail_delete_draft"
+    tools.append(
+        _attach(
+            gmail_delete_draft,
+            _schema(
+                "gmail_delete_draft",
+                "Permanently delete a Gmail draft. Requires user approval.",
+                {"draft_id": {"type": "string"}, "account": _ACCOUNT_PROP},
+                ["draft_id"],
+            ),
+            approval=True,
+            caps=["gmail", "write"],
+        )
+    )
+
+    def _gmail_target(message_id: str, thread_id: str) -> tuple[str, str]:
+        """(url prefix, error) for a message or a whole conversation."""
+        if bool(message_id) == bool(thread_id):
+            return "", "pass exactly one of message_id or thread_id"
+        if message_id:
+            return f"{_GMAIL}/messages/{message_id}", ""
+        return f"{_GMAIL}/threads/{thread_id}", ""
+
+    def gmail_modify_labels(
+        message_id: str = "",
+        thread_id: str = "",
+        add_labels: Optional[list[str]] = None,
+        remove_labels: Optional[list[str]] = None,
+        account: str = "",
+    ) -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        url, target_err = _gmail_target(message_id, thread_id)
+        if target_err:
+            return {"error": target_err}
+        token = profile["access_token"]
+        label_map = _gmail_label_map(token)
+        by_name = {name.lower(): lid for lid, name in label_map.items()}
+        by_name.update({lid.lower(): lid for lid in label_map})
+
+        def ids(names: Optional[list[str]]) -> tuple[list[str], list[str]]:
+            found = [by_name.get(str(n).lower()) for n in names or []]
+            unknown = [n for n, f in zip(names or [], found) if not f]
+            return [f for f in found if f], unknown
+
+        add, unknown_add = ids(add_labels)
+        remove, unknown_remove = ids(remove_labels)
+        if unknown_add or unknown_remove:
+            return {
+                "error": f"unknown labels {unknown_add + unknown_remove}; "
+                f"available: {sorted(set(label_map.values()))}"
+            }
+        if message_id:
+            # Acting on a filtered message must look like acting on a missing one.
+            _d, _m, ferr = _gmail_fetch(
+                token, message_id, _gmail_filters(secrets), label_map
+            )
+            if ferr:
+                return ferr
+        result = _request(
+            "POST",
+            f"{url}/modify",
+            headers=_google_headers(token),
+            json={"addLabelIds": add, "removeLabelIds": remove},
+        )
+        if result.get("ok"):
+            result = {"ok": True, "account": email}
+        return result
+
+    gmail_modify_labels.__name__ = "gmail_modify_labels"
+    tools.append(
+        _attach(
+            gmail_modify_labels,
+            _schema(
+                "gmail_modify_labels",
+                "Add/remove labels on a Gmail message or whole conversation. "
+                "Archive = remove INBOX; mark read = remove UNREAD; mark unread = "
+                "add UNREAD; star = add STARRED. Labels by name; unknown names "
+                "return the list of available ones. Requires user approval.",
+                {
+                    "message_id": {"type": "string"},
+                    "thread_id": {"type": "string"},
+                    "add_labels": {"type": "array", "items": {"type": "string"}},
+                    "remove_labels": {"type": "array", "items": {"type": "string"}},
+                    "account": _ACCOUNT_PROP,
+                },
+                [],
+            ),
+            approval=True,
+            caps=["gmail", "write"],
+        )
+    )
+
+    def gmail_trash(
+        message_id: str = "", thread_id: str = "", account: str = ""
+    ) -> dict[str, Any]:
+        email, profile, err = _gmail_profile(secrets, account)
+        if err:
+            return err
+        url, target_err = _gmail_target(message_id, thread_id)
+        if target_err:
+            return {"error": target_err}
+        token = profile["access_token"]
+        if message_id:
+            _d, _m, ferr = _gmail_fetch(
+                token, message_id, _gmail_filters(secrets), _gmail_label_map(token)
+            )
+            if ferr:
+                return ferr
+        result = _request("POST", f"{url}/trash", headers=_google_headers(token))
+        if result.get("ok"):
+            result = {"ok": True, "account": email}
+        return result
+
+    gmail_trash.__name__ = "gmail_trash"
+    tools.append(
+        _attach(
+            gmail_trash,
+            _schema(
+                "gmail_trash",
+                "Move a Gmail message or whole conversation to the trash "
+                "(recoverable for 30 days). Requires user approval.",
+                {
+                    "message_id": {"type": "string"},
+                    "thread_id": {"type": "string"},
+                    "account": _ACCOUNT_PROP,
+                },
+                [],
             ),
             approval=True,
             caps=["gmail", "write"],

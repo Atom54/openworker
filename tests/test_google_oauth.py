@@ -109,6 +109,7 @@ def test_each_connector_asks_only_for_its_own_scopes(client):
     }
     assert "https://www.googleapis.com/auth/gmail.send" in scopes["gmail"]
     assert "https://www.googleapis.com/auth/gmail.compose" in scopes["gmail"]
+    assert "https://www.googleapis.com/auth/gmail.modify" in scopes["gmail"]
     assert not any("gmail" in s for s in scopes["google_calendar"])
     assert scopes["google_drive"] & {"https://www.googleapis.com/auth/drive.readonly"}
     # Drive never asks for write access — the tool layer has no write path.

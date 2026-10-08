@@ -290,6 +290,51 @@ TOOL_DEFS: tuple[ConnectorToolDef, ...] = (
         "Save an email as a Gmail draft without sending it.",
     ),
     ConnectorToolDef(
+        "gmail",
+        "gmail_get_thread",
+        "Read conversation",
+        "read",
+        "Read a whole Gmail conversation.",
+    ),
+    ConnectorToolDef(
+        "gmail",
+        "gmail_download_attachment",
+        "Save attachment",
+        "write",
+        "Save one Gmail attachment into the session folder (requires approval).",
+    ),
+    ConnectorToolDef(
+        "gmail", "gmail_list_drafts", "List drafts", "read", "List Gmail drafts."
+    ),
+    ConnectorToolDef(
+        "gmail",
+        "gmail_update_draft",
+        "Edit draft",
+        "write",
+        "Replace a Gmail draft's content.",
+    ),
+    ConnectorToolDef(
+        "gmail",
+        "gmail_delete_draft",
+        "Delete draft",
+        "write",
+        "Permanently delete a Gmail draft.",
+    ),
+    ConnectorToolDef(
+        "gmail",
+        "gmail_modify_labels",
+        "Label / archive",
+        "write",
+        "Add or remove labels: archive, mark read/unread, star.",
+    ),
+    ConnectorToolDef(
+        "gmail",
+        "gmail_trash",
+        "Move to trash",
+        "write",
+        "Move a Gmail message or conversation to the trash.",
+    ),
+    ConnectorToolDef(
         "google_calendar",
         "gcal_list_events",
         "List events",

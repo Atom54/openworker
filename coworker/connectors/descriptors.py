@@ -557,7 +557,7 @@ DESCRIPTORS: list[ConnectorDescriptor] = [
             ),
         ],
         instructions=[
-            "Use a Google OAuth access token with Gmail readonly, send, and compose scopes.",
+            "Use a Google OAuth access token with Gmail readonly, send, compose, and modify scopes.",
             "Paste the access token below.",
         ],
         available=True,

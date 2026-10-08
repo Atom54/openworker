@@ -304,6 +304,49 @@ def _safe_filename(name: str) -> str:
     return name or "attachment"
 
 
+def save_attachment(
+    msg: email_lib.message.Message, filename: str, directory: Path
+) -> dict[str, Any]:
+    """Write the attachment named `filename` into `directory` without clobbering."""
+    for name, part in list_attachment_parts(msg):
+        if name == filename:
+            payload = part.get_payload(decode=True) or b""
+            target = directory / _safe_filename(name)
+            counter = 1
+            while target.exists():
+                target = (
+                    directory
+                    / f"{re.sub(r'-[0-9]+$', '', target.stem) or 'attachment'}-{counter}{target.suffix}"
+                )
+                counter += 1
+            target.write_bytes(payload)
+            return {"ok": True, "path": str(target), "size": len(payload)}
+    available = [n for n, _ in list_attachment_parts(msg)]
+    return {"error": f"no attachment named {filename!r}; message has {available}"}
+
+
+def attach_files(
+    msg: EmailMessage, paths: Optional[list[str]], roots: Optional[list[RootDir]]
+) -> str:
+    """Attach local files to `msg`; returns an error message, or "" on success.
+    Only paths inside the session's granted directories may leave the machine."""
+    import mimetypes
+
+    allowed_roots = [r.path for r in (roots or [])]
+    for raw_path in paths or []:
+        path = Path(str(raw_path)).expanduser().resolve()
+        if not any(path.is_relative_to(root) for root in allowed_roots):
+            return f"attachment {raw_path} is outside the session's directories"
+        if not path.is_file():
+            return f"attachment not found: {raw_path}"
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        maintype, subtype = ctype.split("/", 1)
+        msg.add_attachment(
+            path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name
+        )
+    return ""
+
+
 # -- tool metadata plumbing (same shape as the sibling connector modules) -----------
 def _meta(name: str, *, approval: bool, capabilities: list[str]):
     return ai.ToolMetadata(
@@ -547,23 +590,7 @@ def make_email_tools(
             msg = _fetch_message(imap, str(uid))
             if msg is None:
                 return {"error": f"message {uid} not found in {folder}"}
-            for name, part in list_attachment_parts(msg):
-                if name == filename:
-                    payload = part.get_payload(decode=True) or b""
-                    target = scratch.path / _safe_filename(name)
-                    counter = 1
-                    while target.exists():
-                        target = (
-                            scratch.path
-                            / f"{re.sub(r'-[0-9]+$', '', target.stem) or 'attachment'}-{counter}{target.suffix}"
-                        )
-                        counter += 1
-                    target.write_bytes(payload)
-                    return {"ok": True, "path": str(target), "size": len(payload)}
-            available = [n for n, _ in list_attachment_parts(msg)]
-            return {
-                "error": f"no attachment named {filename!r}; message has {available}"
-            }
+            return save_attachment(msg, filename, scratch.path)
         except Exception as exc:
             return {"error": str(exc)}
         finally:
@@ -637,25 +664,9 @@ def make_email_tools(
         msg["Subject"] = final_subject
         msg.set_content(body)
 
-        allowed_roots = [r.path for r in (roots or [])]
-        for raw_path in attachments or []:
-            path = Path(str(raw_path)).expanduser().resolve()
-            if not any(path.is_relative_to(root) for root in allowed_roots):
-                return {
-                    "error": f"attachment {raw_path} is outside the session's directories"
-                }
-            if not path.is_file():
-                return {"error": f"attachment not found: {raw_path}"}
-            import mimetypes
-
-            ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            maintype, subtype = ctype.split("/", 1)
-            msg.add_attachment(
-                path.read_bytes(),
-                maintype=maintype,
-                subtype=subtype,
-                filename=path.name,
-            )
+        att_err = attach_files(msg, attachments, roots)
+        if att_err:
+            return {"error": att_err}
 
         try:
             smtp = _smtp_login(profile, servers, smtp_factory)

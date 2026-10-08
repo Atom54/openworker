@@ -151,7 +151,10 @@ def test_tools_pick_the_requested_account_token(secrets, monkeypatch):
     assert out["ok"] and out["account"] == "one@x.com"
     out = search("from:bob", account="two@y.com")
     assert out["ok"] and out["account"] == "two@y.com"
-    assert [t for _, t in calls] == ["Bearer tok-one@x.com", "Bearer tok-two@y.com"]
+    # each search: the list call + the label-name lookup
+    assert [t for _, t in calls] == ["Bearer tok-one@x.com"] * 2 + [
+        "Bearer tok-two@y.com"
+    ] * 2
 
     out = search("x", account="nobody@z.com")
     assert "no gmail account" in out["error"]
@@ -171,11 +174,26 @@ def test_legacy_single_account_still_works_via_tools(secrets, monkeypatch):
 # --- filters: silent omission -------------------------------------------------
 
 
+def _raw(**headers_and_body: str) -> str:
+    """base64url RFC 822 message, the shape Gmail returns for format=raw."""
+    import base64
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    body = headers_and_body.pop("body", "hi")
+    for name, value in headers_and_body.items():
+        msg[name.replace("_", "-")] = value
+    msg.set_content(body)
+    return base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
+
+
 def _msg(mid: str, sender: str, labels: list[str] | None = None) -> dict:
+    """Serves both format=metadata (payload headers) and format=raw (raw)."""
     return {
         "id": mid,
         "labelIds": labels or [],
         "payload": {"headers": [{"name": "From", "value": f"Some One <{sender}>"}]},
+        "raw": _raw(From=f"Some One <{sender}>"),
     }
 
 
@@ -243,14 +261,31 @@ def test_label_filter_uses_label_names(secrets, monkeypatch):
     assert out["_display"]["hidden_by_filters"] == 1
 
 
-def test_no_filters_means_no_extra_lookups(secrets, monkeypatch):
+def test_search_returns_envelopes_not_bare_ids(secrets, monkeypatch):
     gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
-    calls = _fake_gmail(
+    meta = {
+        "id": "m1",
+        "threadId": "t1",
+        "snippet": "Bonjour",
+        "labelIds": ["INBOX", "UNREAD"],
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Amélie <a@x.com>"},
+                {"name": "Subject", "value": "Devis"},
+            ]
+        },
+    }
+    _fake_gmail(
         monkeypatch,
-        {"/messages": {"ok": True, "data": {"messages": [{"id": "m1"}]}}},
+        {
+            "/messages/m1": {"ok": True, "data": meta},
+            "/messages": {"ok": True, "data": {"messages": [{"id": "m1"}]}},
+        },
     )
     out = _tool(secrets, "gmail_search_messages")("q")
-    assert out["ok"] and len(calls) == 1  # just the list call — zero overhead
+    [m] = out["data"]["messages"]
+    assert m["from"] == "Amélie <a@x.com>" and m["subject"] == "Devis"
+    assert m["thread_id"] == "t1" and m["unread"] and m["snippet"] == "Bonjour"
 
 
 def test_sender_rule_matching():
@@ -294,3 +329,184 @@ def test_account_profile_refreshes_in_place(secrets, monkeypatch):
     assert out["ok"]
     assert secrets.get("gmail:account:me@x.com")["access_token"] == "fresh"
     assert not (secrets.get("gmail:default") or {}).get("access_token")
+
+
+# --- reading / composing / organizing ------------------------------------------
+
+
+def _fake_api(monkeypatch, routes: dict[str, dict]) -> list[tuple[str, str, object]]:
+    """Exact routing on "METHOD /path" under users/me; records (method, path, json).
+    Unrouted calls answer an empty ok (labels, signature, …)."""
+    from coworker.connectors import integration_tools
+
+    calls: list[tuple[str, str, object]] = []
+
+    def fake_request(method, url, *, headers=None, params=None, json=None, auth=None):
+        path = url.split("/users/me", 1)[1]
+        calls.append((method, path, json))
+        return routes.get(f"{method} {path}", {"ok": True, "data": {}})
+
+    monkeypatch.setattr(integration_tools, "_request", fake_request)
+    return calls
+
+
+def _decoded(payload: dict):
+    import base64
+    import email
+
+    raw = payload["raw"]
+    from email import policy
+
+    return email.message_from_bytes(
+        base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)), policy=policy.default
+    )
+
+
+def test_get_message_decodes_body_and_lists_attachments(secrets, monkeypatch):
+    import base64
+    from email.message import EmailMessage
+
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    m = EmailMessage()
+    m["From"], m["Subject"] = "a@x.com", "=?utf-8?q?R=C3=A9union?="
+    m.set_content("Le corps complet du message, bien au-delà du snippet.")
+    m.add_attachment(
+        b"%PDF", maintype="application", subtype="pdf", filename="devis.pdf"
+    )
+    raw = base64.urlsafe_b64encode(m.as_bytes()).decode().rstrip("=")
+    _fake_api(
+        monkeypatch,
+        {
+            "GET /messages/m1": {
+                "ok": True,
+                "data": {"id": "m1", "threadId": "t1", "raw": raw},
+            }
+        },
+    )
+    data = _tool(secrets, "gmail_get_message")("m1")["data"]
+    assert "bien au-delà du snippet" in data["body"]
+    assert data["subject"] == "Réunion" and data["thread_id"] == "t1"
+    assert data["attachments"] == [
+        {"filename": "devis.pdf", "content_type": "application/pdf", "size": 4}
+    ]
+
+
+def test_thread_reads_every_message_and_hides_filtered_ones(secrets, monkeypatch):
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    gmail_accounts.set_filters(secrets, senders=["ceo@corp.com"])
+    _fake_api(
+        monkeypatch,
+        {
+            "GET /threads/t1": {
+                "ok": True,
+                "data": {"messages": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]},
+            },
+            "GET /messages/m1": {"ok": True, "data": {"id": "m1", "raw": _raw(From="a@x.com", body="un")}},
+            "GET /messages/m2": {"ok": True, "data": {"id": "m2", "raw": _raw(From="ceo@corp.com", body="secret")}},
+            "GET /messages/m3": {"ok": True, "data": {"id": "m3", "raw": _raw(From="me@x.com", body="deux")}},
+        },
+    )  # fmt: skip
+    out = _tool(secrets, "gmail_get_thread")("t1")
+    assert [m["body"].strip() for m in out["data"]["messages"]] == ["un", "deux"]
+    assert out["_display"]["hidden_by_filters"] == 1
+    assert "secret" not in json.dumps(out["data"])
+
+
+def test_draft_reply_threads_under_original(secrets, monkeypatch):
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    original = _raw(From="amelie@x.com", Subject="Devis", Message_ID="<abc@mail>")
+    calls = _fake_api(
+        monkeypatch,
+        {"GET /messages/m1": {"ok": True, "data": {"threadId": "t1", "raw": original}}},
+    )
+    out = _tool(secrets, "gmail_create_draft")(
+        "amelie@x.com", "ignored", "Merci !", reply_to_message_id="m1"
+    )
+    assert out["ok"]
+    [posted] = [j for method, path, j in calls if (method, path) == ("POST", "/drafts")]
+    assert posted["message"]["threadId"] == "t1"
+    sent = _decoded(posted["message"])
+    assert sent["In-Reply-To"] == "<abc@mail>" and sent["Subject"] == "Re: Devis"
+
+
+def test_update_draft_keeps_its_conversation(secrets, monkeypatch):
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    current = _raw(
+        Subject="Re: Devis", In_Reply_To="<abc@mail>", References="<abc@mail>"
+    )
+    calls = _fake_api(
+        monkeypatch,
+        {"GET /drafts/d1": {"ok": True, "data": {"message": {"threadId": "t1", "raw": current}}}},
+    )  # fmt: skip
+    assert _tool(secrets, "gmail_update_draft")("d1", "a@x.com", "whatever", "v2")["ok"]
+    [put] = [j for method, path, j in calls if (method, path) == ("PUT", "/drafts/d1")]
+    sent = _decoded(put["message"])
+    assert put["message"]["threadId"] == "t1"
+    assert sent["In-Reply-To"] == "<abc@mail>" and sent["Subject"] == "Re: Devis"
+    assert "v2" in sent.get_body(("plain",)).get_content()
+
+
+def test_signature_html_and_bcc(secrets, monkeypatch):
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    calls = _fake_api(
+        monkeypatch,
+        {
+            "GET /settings/sendAs": {
+                "ok": True,
+                "data": {"sendAs": [{"isDefault": True, "signature": "<b>Thomas</b>"}]},
+            }
+        },
+    )
+    _tool(secrets, "gmail_send_email")(
+        "a@x.com", "Hi", "Line 1\nLine 2", bcc="boss@x.com", body_html="<p>Hi</p>"
+    )
+    [posted] = [j for method, path, j in calls if path == "/messages/send"]
+    sent = _decoded(posted)
+    assert sent["Bcc"] == "boss@x.com"
+    assert "Thomas" in sent.get_body(("plain",)).get_content()
+    html = sent.get_body(("html",)).get_content()
+    assert "<p>Hi</p>" in html and "<b>Thomas</b>" in html
+
+
+def test_attachments_must_live_in_session_roots(secrets, monkeypatch, tmp_path):
+    from coworker.connectors.integration_tools import make_integration_tools
+    from coworker.roots import RootDir
+
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    root = tmp_path / "work"
+    root.mkdir()
+    (root / "devis.pdf").write_bytes(b"%PDF")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("x")
+    calls = _fake_api(monkeypatch, {})
+    tools = make_integration_tools(secrets, roots=[RootDir(path=root, writable=True)])
+    draft = next(t for t in tools if t.__name__ == "gmail_create_draft")
+
+    assert "outside" in draft("a@x.com", "s", "b", attachments=[str(outside)])["error"]
+    assert draft("a@x.com", "s", "b", attachments=[str(root / "devis.pdf")])["ok"]
+    [posted] = [j for method, path, j in calls if path == "/drafts"]
+    names = [p.get_filename() for p in _decoded(posted["message"]).iter_attachments()]
+    assert names == ["devis.pdf"]
+
+
+def test_modify_labels_resolves_names_and_rejects_unknown(secrets, monkeypatch):
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    labels = {
+        "ok": True,
+        "data": {"labels": [{"id": "INBOX", "name": "INBOX"}, {"id": "Label_7", "name": "Clients"}]},
+    }  # fmt: skip
+    calls = _fake_api(
+        monkeypatch,
+        {
+            "GET /labels": labels,
+            "GET /messages/m1": {"ok": True, "data": {"raw": _raw()}},
+        },
+    )
+    modify = _tool(secrets, "gmail_modify_labels")
+    assert modify(message_id="m1", add_labels=["clients"], remove_labels=["INBOX"])[
+        "ok"
+    ]
+    [body] = [j for method, path, j in calls if path == "/messages/m1/modify"]
+    assert body == {"addLabelIds": ["Label_7"], "removeLabelIds": ["INBOX"]}
+    assert "Clients" in modify(message_id="m1", add_labels=["Nope"])["error"]
+    assert "exactly one" in modify(add_labels=["Clients"])["error"]
