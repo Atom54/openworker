@@ -53,10 +53,14 @@ def _instructions(item: dict) -> str:
         if "asset://" in notes
         else ""
     )
+    # Standing instructions, written once in TaskFlow's settings: they apply to every
+    # task, so the user never repeats them in the notes.
+    consignes = (item.get("instructions") or "").strip()
     return (
         f"{item['title']}\n\n"
         + (f"{notes}\n\n" if notes else "")
         + images
+        + (f"Consignes permanentes :\n{consignes}\n\n" if consignes else "")
         + "(Tâche envoyée depuis TaskFlow. Tout le contexte est ci-dessus : ne consulte ni ne "
         "modifie TaskFlow. Ton dernier message est ajouté automatiquement aux notes de la tâche "
         "comme rapport : mets-y le résultat lui-même, puis en français ce qui a été fait, ce qui "

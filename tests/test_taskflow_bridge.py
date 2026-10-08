@@ -84,6 +84,18 @@ async def test_claims_a_queued_task_as_a_conversation():
     assert "7391" not in message, "no API pointer without images"
 
 
+async def test_standing_instructions_ride_with_every_task():
+    host = FakeHost()
+    item = {**QUEUED, "instructions": "Un mail se prépare en brouillon."}
+    await _tick(host, FakeTaskFlow(queue=[item]))
+    message = host.launched[0][1]
+    assert "Consignes permanentes :\nUn mail se prépare en brouillon." in message
+    # ...and the block disappears when the field is empty.
+    host = FakeHost()
+    await _tick(host, FakeTaskFlow(queue=[{**QUEUED, "instructions": None}]))
+    assert "Consignes permanentes" not in host.launched[0][1]
+
+
 async def test_images_in_notes_get_the_assets_url():
     host = FakeHost()
     item = {**QUEUED, "notes": "![](asset://localhost/2026/09/a.png)"}
