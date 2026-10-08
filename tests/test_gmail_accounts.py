@@ -510,3 +510,33 @@ def test_modify_labels_resolves_names_and_rejects_unknown(secrets, monkeypatch):
     assert body == {"addLabelIds": ["Label_7"], "removeLabelIds": ["INBOX"]}
     assert "Clients" in modify(message_id="m1", add_labels=["Nope"])["error"]
     assert "exactly one" in modify(add_labels=["Clients"])["error"]
+
+
+def test_reply_unfolds_wrapped_headers_from_the_original(secrets, monkeypatch):
+    import base64
+
+    gmail_accounts.managed_connect_account(secrets, _account("me@x.com"))
+    # A received message as Gmail serves it: long headers folded over lines.
+    original = (
+        b"From: amelie@x.com\r\n"
+        b"Subject: Proposition de partenariat pour le salon\r\n de printemps 2027\r\n"
+        b"Message-ID: <c@mail>\r\n"
+        b"References: <a@mail>\r\n <b@mail>\r\n"
+        b"\r\nBonjour\r\n"
+    )
+    raw = base64.urlsafe_b64encode(original).decode().rstrip("=")
+    calls = _fake_api(
+        monkeypatch,
+        {"GET /messages/m1": {"ok": True, "data": {"threadId": "t1", "raw": raw}}},
+    )
+    out = _tool(secrets, "gmail_create_draft")(
+        "amelie@x.com", "x", "Merci !", reply_to_message_id="m1"
+    )
+    assert out["ok"], out
+    [posted] = [j for method, path, j in calls if (method, path) == ("POST", "/drafts")]
+    sent = _decoded(posted["message"])
+    assert (
+        sent["Subject"]
+        == "Re: Proposition de partenariat pour le salon de printemps 2027"
+    )
+    assert sent["References"] == "<a@mail> <b@mail> <c@mail>"

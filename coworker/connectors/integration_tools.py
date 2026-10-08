@@ -1459,16 +1459,21 @@ def make_integration_tools(
             if err:
                 return {}, err
         thread = thread or {}
+        headers = {
+            "To": to,
+            "Subject": thread.get("subject") or subject,
+            "Cc": cc,
+            "Bcc": bcc,  # Gmail delivers to Bcc and strips the header.
+            "In-Reply-To": thread.get("In-Reply-To", ""),
+            "References": thread.get("References", ""),
+        }
         msg = EmailMessage()
-        msg["To"] = to
-        msg["Subject"] = thread.get("subject") or subject
-        if cc:
-            msg["Cc"] = cc
-        if bcc:
-            msg["Bcc"] = bcc  # Gmail delivers to Bcc and strips the header.
-        for name in ("In-Reply-To", "References"):
-            if thread.get(name):
-                msg[name] = thread[name]
+        for name, value in headers.items():
+            # Unfold: long headers copied from a received message (Subject,
+            # References) arrive wrapped over several lines, and EmailMessage
+            # refuses any header value containing CR/LF.
+            if value := " ".join(str(value).split()):
+                msg[name] = value
         # The API doesn't add the signature the Gmail UI would; mirror it.
         sig = _gmail_signature(token) if include_signature else ""
         msg.set_content(body + (f"\n\n-- \n{_html_to_text(sig)}" if sig else ""))
